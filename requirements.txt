@@ -1,0 +1,7 @@
+wxPython>=4.2
+numpy>=1.24
+sounddevice>=0.4
+
+# Build-only (install separately to produce a portable .exe):
+#   pip install pyinstaller
+#   pyinstaller tone_generator.spec

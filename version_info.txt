@@ -1,0 +1,33 @@
+# UTF-8
+#
+# Windows version resource used by PyInstaller when building ToneGenerator.exe.
+
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0),
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        "040904b0",
+        [
+          StringStruct("CompanyName", "Tone Generator"),
+          StringStruct("FileDescription", "Accessible audio test-tone generator"),
+          StringStruct("FileVersion", "1.0.0"),
+          StringStruct("InternalName", "ToneGenerator"),
+          StringStruct("OriginalFilename", "ToneGenerator.exe"),
+          StringStruct("ProductName", "Tone Generator"),
+          StringStruct("ProductVersion", "1.0.0"),
+        ],
+      )
+    ]),
+    VarFileInfo([VarStruct("Translation", [1033, 1200])]),
+  ],
+)

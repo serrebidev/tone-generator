@@ -25,15 +25,14 @@ python tone_generator.py
 ## Build The Windows Executable
 
 ```powershell
-python -m pip install -r requirements-build.txt
-pyinstaller --noconfirm --clean tone_generator.spec
+build.bat build
 ```
 
 The build output is `dist\ToneGenerator.exe`. The PyInstaller spec bundles wxPython, NumPy, sounddevice, and the PortAudio DLLs required by sounddevice.
 
 ## Release
 
-Version `1.0.0` is the first public release.
+Use `build.bat release` for official releases. It publishes the GitHub release as latest/non-draft and removes any remaining draft releases.
 
 ##Submit bugs in issues, or join my Telegram group!
 (https://t.me/SerrebiProjects)

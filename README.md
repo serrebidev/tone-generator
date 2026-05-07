@@ -34,3 +34,6 @@ The build output is `dist\ToneGenerator.exe`. The PyInstaller spec bundles wxPyt
 ## Release
 
 Version `1.0.0` is the first public release.
+
+##Submit bugs in issues, or join my Telegram group!
+(https://t.me/SerrebiProjects)

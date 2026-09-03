@@ -2,6 +2,8 @@
 
 Accessible Windows desktop test-tone generator built with wxPython, NumPy, and sounddevice.
 
+**Questions, bugs, or release news?** Join the [SerrebiProjects Telegram group](https://t.me/SerrebiProjects), the fastest place to get help.
+
 ## Features
 
 - Continuous sine, square, triangle, and sawtooth tones.

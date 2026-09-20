@@ -8,13 +8,25 @@ Controls are grouped into a menu bar (File, Playback, Frequency, Settings,
 Help). The main window keeps only the controls you reach for constantly:
 frequency, preset jump, play/stop, volume.
 
+Ctrl+L, or the Find loudest frequency button, stops any generated tone, records
+about three seconds from the default input device on a worker thread, and sets
+the frequency control to the loudest spectral component it hears. The result is
+announced with a message box; the detected tone is never played automatically.
+
 Step sizes for Ctrl+Up/Down and Ctrl+Shift+Up/Down are configurable via
 Settings -> Step sizes... and persist between sessions via wx.Config.
 """
 
+import threading
+
 import wx
 
-from audio_engine import ToneGenerator
+from audio_engine import (
+    DEFAULT_CAPTURE_SECONDS,
+    ToneGenerator,
+    detect_loudest_frequency,
+    record_mono,
+)
 
 
 CONFIG_APP_NAME = "ToneGenerator"
@@ -112,7 +124,14 @@ class MainFrame(wx.Frame):
         self._small_down_item: wx.MenuItem | None = None
         self._large_up_item: wx.MenuItem | None = None
         self._large_down_item: wx.MenuItem | None = None
+        self._find_item: wx.MenuItem | None = None
         self._hint_text: wx.StaticText | None = None
+
+        # True while a microphone capture is in flight, and once the window is
+        # closing so a late worker result is dropped instead of touching dead
+        # controls.
+        self._listening = False
+        self._closing = False
 
         self._load_prefs()
         self._build_menu()
@@ -159,6 +178,12 @@ class MainFrame(wx.Frame):
         set_id = wx.NewIdRef()
         freq_menu.Append(set_id, "&Set frequency...\tCtrl+G")
         self.Bind(wx.EVT_MENU, self._on_set_frequency, id=set_id)
+
+        find_id = wx.NewIdRef()
+        self._find_item = freq_menu.Append(
+            find_id, "Find &loudest frequency (microphone)\tCtrl+L"
+        )
+        self.Bind(wx.EVT_MENU, self._on_find_loudest_frequency, id=find_id)
         freq_menu.AppendSeparator()
 
         # Configurable-step items. Labels are set by _refresh_step_labels().
@@ -280,6 +305,14 @@ class MainFrame(wx.Frame):
 
         self._hint_text = wx.StaticText(panel, label="")
         freq_box.Add(self._hint_text, 0, wx.ALL, 5)
+
+        self.find_btn = wx.Button(panel, label="Find &loudest frequency (Ctrl+L)")
+        self.find_btn.SetName(
+            "Find loudest frequency using the microphone, Control L"
+        )
+        self.find_btn.Bind(wx.EVT_BUTTON, self._on_find_loudest_frequency)
+        freq_box.Add(self.find_btn, 0, wx.EXPAND | wx.ALL, 5)
+
         vbox.Add(freq_box, 0, wx.EXPAND | wx.ALL, 8)
 
         pre_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Preset frequencies")
@@ -317,7 +350,8 @@ class MainFrame(wx.Frame):
 
         self.CreateStatusBar()
         self.SetStatusText(
-            "F5: play/stop.  Up/Down: +/-50 Hz.  Ctrl+G: set frequency.  F1: keys."
+            "F5: play/stop.  Up/Down: +/-50 Hz.  Ctrl+G: set frequency.  "
+            "Ctrl+L: find loudest frequency.  F1: keys."
         )
 
     # ---------- handlers ----------
@@ -354,6 +388,81 @@ class MainFrame(wx.Frame):
             self.gen.set_frequency(val)
             self.SetStatusText(f"Frequency {val} Hz")
         dlg.Destroy()
+
+    def _on_find_loudest_frequency(self, _event):
+        if self._listening:
+            return
+        # Stop generated audio first: otherwise the microphone hears this
+        # window's own tone instead of the sound source being measured.
+        self.gen.stop()
+        self.play_btn.SetLabel("&Play")
+        self._set_listening(True)
+        self.SetStatusText(
+            f"Listening to the microphone for {DEFAULT_CAPTURE_SECONDS:.0f} seconds..."
+        )
+        threading.Thread(target=self._listen_worker, daemon=True).start()
+
+    def _set_listening(self, listening: bool):
+        self._listening = listening
+        self.find_btn.Enable(not listening)
+        if self._find_item is not None:
+            self._find_item.Enable(not listening)
+
+    def _listen_worker(self):
+        """Capture and analyse off the GUI thread, then hand the result back."""
+        result = None
+        error = None
+        try:
+            samples, rate = record_mono()
+            result = detect_loudest_frequency(samples, rate)
+        except Exception as exc:  # no input device, device busy, driver error
+            error = exc
+        if not self._closing:
+            wx.CallAfter(self._finish_listening, result, error)
+
+    def _finish_listening(self, result, error):
+        if self._closing:
+            return
+        self._set_listening(False)
+
+        if error is not None:
+            self.SetStatusText("Microphone listening failed")
+            wx.MessageBox(
+                "Could not record from the microphone.\n\n"
+                f"{error}\n\n"
+                "Check that a microphone or other input device is connected "
+                "and enabled in Windows sound settings, then try again.",
+                "Microphone error",
+                wx.OK | wx.ICON_ERROR,
+            )
+            self.find_btn.SetFocus()
+            return
+
+        if result is None:
+            self.SetStatusText("No frequency found")
+            wx.MessageBox(
+                "No clear frequency was found. The recording was silent, too "
+                "quiet, or had no single strong tone.\n\n"
+                "Move the microphone closer to the sound source or make the "
+                "sound louder, then try again.",
+                "No frequency found",
+                wx.OK | wx.ICON_INFORMATION,
+            )
+            self.find_btn.SetFocus()
+            return
+
+        hertz = int(round(result))
+        self.freq_input.SetValue(hertz)
+        self.gen.set_frequency(hertz)
+        self.freq_input.SetFocus()
+        self.SetStatusText(f"Loudest frequency: {hertz} Hz")
+        wx.MessageBox(
+            f"Loudest frequency: {hertz} Hz.\n\n"
+            "The frequency control now holds this value. The tone is not "
+            "playing. Press F5 or the Play button to hear it.",
+            "Loudest frequency found",
+            wx.OK | wx.ICON_INFORMATION,
+        )
 
     def _on_configure_steps(self, _event):
         dlg = StepConfigDialog(self, self.small_step, self.large_step)
@@ -419,6 +528,7 @@ class MainFrame(wx.Frame):
             "Keyboard shortcuts:\n\n"
             "F5                      Play / Stop\n"
             "Ctrl+G                  Set frequency...\n"
+            "Ctrl+L                  Find loudest frequency using the microphone\n"
             "Ctrl+K                  Configure step sizes...\n"
             "Up / Down               +/-50 Hz (frequency field focused)\n"
             f"Ctrl+Up / Ctrl+Down     +/-{self.small_step} Hz (configurable)\n"
@@ -440,6 +550,7 @@ class MainFrame(wx.Frame):
         )
 
     def _on_close(self, event):
+        self._closing = True
         self.gen.stop()
         event.Skip()
 

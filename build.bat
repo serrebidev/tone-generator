@@ -141,12 +141,20 @@ if errorlevel 1 (
     echo [release] Failed to publish v%NEXT_VERSION% as Latest.
     exit /b 1
 )
+rem Confirm it really is published before deleting anything: a release that is
+rem still seen as a draft would otherwise be destroyed by the cleanup below.
+powershell -NoProfile -Command "$state = gh release view 'v%NEXT_VERSION%' --repo '%GITHUB_REPO_SLUG%' --json isDraft,url | ConvertFrom-Json; if ($state.isDraft) { Write-Host ('[release] v%NEXT_VERSION% is still a draft at ' + $state.url); exit 1 }; Write-Host ('[release] v%NEXT_VERSION% is published: ' + $state.url)"
+if errorlevel 1 (
+    echo [release] v%NEXT_VERSION% is not published. Stopping before draft cleanup.
+    exit /b 1
+)
 call :delete_draft_releases || exit /b 1
 exit /b 0
 
 :delete_draft_releases
 echo [release] Checking for draft releases in %GITHUB_REPO_SLUG%...
-powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $repo='%GITHUB_REPO_SLUG%'; $drafts = gh release list --repo $repo --limit 100 --json tagName,isDraft | ConvertFrom-Json | Where-Object { $_.isDraft }; foreach ($draft in $drafts) { Write-Host ('Deleting draft release ' + $draft.tagName + '...'); gh release delete $draft.tagName --repo $repo --yes }"
+rem Never touch the release just published, so it cannot delete its own work.
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $repo='%GITHUB_REPO_SLUG%'; $keep='v%NEXT_VERSION%'; $drafts = gh release list --repo $repo --limit 100 --json tagName,isDraft | ConvertFrom-Json | Where-Object { $_.isDraft -eq $true -and $_.tagName -ne $keep }; foreach ($draft in $drafts) { Write-Host ('Deleting draft release ' + $draft.tagName + '...'); gh release delete $draft.tagName --repo $repo --yes }"
 if errorlevel 1 (
     echo [release] Failed to remove draft releases.
     exit /b 1

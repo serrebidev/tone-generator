@@ -8,7 +8,8 @@ Accessible Windows desktop test-tone generator built with wxPython, NumPy, and s
 
 - Continuous sine, square, triangle, and sawtooth tones.
 - Frequency presets from 20 Hz to 15 kHz.
-- Finds the loudest frequency heard by a microphone input and sets the frequency control to it (Ctrl+L).
+- Finds the loudest frequency heard by any chosen device and sets the frequency control to it (Ctrl+L).
+- Plays the tone through any chosen output device: speakers, headphones, or another interface.
 - Keyboard-accessible controls and menu shortcuts.
 - Configurable small and large frequency step sizes.
 - Stereo output options for both, left-only, or right-only playback.
@@ -16,9 +17,15 @@ Accessible Windows desktop test-tone generator built with wxPython, NumPy, and s
 
 ## Find The Loudest Frequency
 
-Press Ctrl+L, choose Frequency then Find loudest frequency, or use the Find loudest frequency button in the Frequency area. Any generated tone stops, the app records about three seconds from the default Windows recording device, and the frequency control is set to the loudest component it heard between 20 Hz and 20 kHz. Playback does not restart by itself; press F5 to hear the detected frequency and then adjust it with the arrow keys.
+Press Ctrl+L, choose Frequency then Find loudest frequency, or use the Find loudest frequency button in the Frequency area. Any generated tone stops, the app records about three seconds from the listening device, and the frequency control is set to the loudest component it heard between 20 Hz and 20 kHz. Playback does not restart by itself; press F5 to hear the detected frequency and then adjust it with the arrow keys.
 
-A default recording device must be set in Windows sound settings. When none is set, the app says so and lists the input devices Windows reports.
+## Choosing Audio Devices
+
+Settings then Listening device chooses what to listen to, and Settings then Output device chooses where the tone is played. Both list the system default plus every device Windows reports, with the host API in brackets because one physical device usually appears once per API.
+
+Anything that can supply audio can be the listening device: a microphone, line in, a sound card input, a USB interface, or a loopback device such as Stereo Mix that captures what the computer is playing. Whether a loopback device exists depends on the audio driver; where the driver offers none, the loudest frequency cannot be measured from speakers or headphones, and a microphone has to be used instead. No microphone is needed to play a tone.
+
+Choices are remembered by name, so they survive Windows renumbering devices as hardware is plugged in. When a remembered device is gone, the app falls back to the system default.
 
 ## Download
 

@@ -23,28 +23,58 @@ _LOG_FLOOR = 1e-30
 MAX_SANE_PEAK = 16.0
 
 
-def _default_input_samplerate() -> int:
-    """Sample rate of the default input device, or explain why there is none."""
-    try:
-        info = sd.query_devices(kind="input")
-    except Exception as exc:
-        raise RuntimeError(
-            "Windows has no default recording device set. "
-            f"Input devices it reports: {_input_device_names()}."
-        ) from exc
-    return int(round(float(info["default_samplerate"])))
+def list_capture_devices() -> list[tuple[int, str]]:
+    """Every device that can supply audio, as (index, label).
+
+    Labels carry the host API because one physical device normally appears once
+    per API under the same name.
+    """
+    return _list_devices("max_input_channels")
 
 
-def _input_device_names() -> str:
+def list_playback_devices() -> list[tuple[int, str]]:
+    """Every device that can play audio, as (index, label)."""
+    return _list_devices("max_output_channels")
+
+
+def _list_devices(channel_key: str) -> list[tuple[int, str]]:
     try:
-        names = [
-            str(device["name"])
-            for device in sd.query_devices()
-            if device["max_input_channels"] > 0
-        ]
+        devices = sd.query_devices()
+        hostapis = sd.query_hostapis()
     except Exception:
-        return "unknown"
-    return "; ".join(names) if names else "none"
+        return []
+    found = []
+    for index, device in enumerate(devices):
+        if device[channel_key] <= 0:
+            continue
+        api = hostapis[device["hostapi"]]["name"]
+        found.append((index, f"{device['name']} ({api})"))
+    return found
+
+
+def _input_samplerate(device=None) -> int:
+    """Sample rate of `device`, or of the default input, or explain the failure."""
+    try:
+        if device is None:
+            info = sd.query_devices(kind="input")
+        else:
+            info = sd.query_devices(device)
+        return int(round(float(info["default_samplerate"])))
+    except Exception as exc:
+        raise RuntimeError(_unusable_input_message(device)) from exc
+
+
+def _unusable_input_message(device=None) -> str:
+    if device is None:
+        what = "Windows has no default recording device set."
+    else:
+        try:
+            name = sd.query_devices(device)["name"]
+            what = f"The listening device {name} is not available."
+        except Exception:
+            what = "The selected listening device is not available."
+    names = "; ".join(label for _index, label in list_capture_devices()) or "none"
+    return f"{what} Devices Windows reports: {names}."
 
 
 def detect_loudest_frequency(
@@ -112,13 +142,13 @@ def detect_loudest_frequency(
 
 
 def record_mono(seconds: float = DEFAULT_CAPTURE_SECONDS, sample_rate=None, device=None):
-    """Record `seconds` of mono audio from the default input device.
+    """Record `seconds` of mono audio from `device`, or the default input.
 
     Returns (samples, sample_rate). Mono float32 capture at the device's own
     default sample rate.
     """
     if sample_rate is None:
-        sample_rate = _default_input_samplerate()
+        sample_rate = _input_samplerate(device)
     sample_rate = int(round(float(sample_rate)))
     frames = max(1, int(round(seconds * sample_rate)))
     data = sd.rec(
@@ -143,6 +173,7 @@ class ToneGenerator:
         self.volume = 0.3
         self.waveform = "Sine"
         self.channel = "Both"
+        self.output_device = None
         self.stream: sd.OutputStream | None = None
         self._phase = 0.0
         self._lock = threading.Lock()
@@ -188,14 +219,26 @@ class ToneGenerator:
     def start(self):
         if self.is_playing:
             return
+        # A chosen device may not run at the default rate, so follow whatever
+        # rate it reports before building the stream.
+        if self.output_device is not None:
+            info = sd.query_devices(self.output_device)
+            self.sample_rate = int(round(float(info["default_samplerate"])))
         self.stream = sd.OutputStream(
             samplerate=self.sample_rate,
             channels=2,
+            device=self.output_device,
             dtype="float32",
             callback=self._callback,
             blocksize=512,
         )
         self.stream.start()
+
+    def set_output_device(self, device):
+        """Play through `device`, or the system default when None."""
+        if self.is_playing:
+            self.stop()
+        self.output_device = None if device is None else int(device)
 
     def stop(self):
         if self.stream is not None:

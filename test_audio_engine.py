@@ -123,6 +123,99 @@ class RecordMonoTests(unittest.TestCase):
                 audio_engine.record_mono(seconds=0.5)
         self.assertIn("default recording device", str(caught.exception))
 
+    def test_recording_follows_the_chosen_device(self):
+        captured = {}
+
+        def fake_rec(frames, samplerate, channels, dtype, device):
+            captured.update(frames=frames, samplerate=samplerate, device=device)
+            return np.zeros((frames, 1), dtype=dtype)
+
+        with (
+            mock.patch.object(
+                audio_engine.sd,
+                "query_devices",
+                return_value={"default_samplerate": 48000.0, "name": "Line In"},
+            ),
+            mock.patch.object(audio_engine.sd, "rec", side_effect=fake_rec),
+            mock.patch.object(audio_engine.sd, "wait"),
+        ):
+            audio_engine.record_mono(seconds=0.5, device=7)
+
+        self.assertEqual(captured["device"], 7)
+        self.assertEqual(captured["samplerate"], 48000)
+        self.assertEqual(captured["frames"], 24000)
+
+
+class DeviceListingTests(unittest.TestCase):
+    """The picker must offer anything that can move audio, not just microphones."""
+
+    DEVICES = [
+        {
+            "name": "Speakers",
+            "hostapi": 0,
+            "max_input_channels": 0,
+            "max_output_channels": 2,
+            "default_samplerate": 48000.0,
+        },
+        {
+            "name": "Stereo Mix",
+            "hostapi": 1,
+            "max_input_channels": 2,
+            "max_output_channels": 0,
+            "default_samplerate": 44100.0,
+        },
+        {
+            "name": "Microphone",
+            "hostapi": 1,
+            "max_input_channels": 1,
+            "max_output_channels": 0,
+            "default_samplerate": 44100.0,
+        },
+    ]
+    HOSTAPIS = [{"name": "MME"}, {"name": "Windows WASAPI"}]
+
+    def test_lists_capture_devices_only_and_names_their_api(self):
+        with (
+            mock.patch.object(
+                audio_engine.sd, "query_devices", return_value=self.DEVICES
+            ),
+            mock.patch.object(
+                audio_engine.sd, "query_hostapis", return_value=self.HOSTAPIS
+            ),
+        ):
+            devices = audio_engine.list_capture_devices()
+
+        # Stereo Mix is a speaker loopback, so it has to be offered alongside
+        # the microphone. The API is part of the label because one physical
+        # device appears once per API under the same name.
+        self.assertEqual(
+            devices,
+            [
+                (1, "Stereo Mix (Windows WASAPI)"),
+                (2, "Microphone (Windows WASAPI)"),
+            ],
+        )
+
+    def test_lists_playback_devices_only(self):
+        with (
+            mock.patch.object(
+                audio_engine.sd, "query_devices", return_value=self.DEVICES
+            ),
+            mock.patch.object(
+                audio_engine.sd, "query_hostapis", return_value=self.HOSTAPIS
+            ),
+        ):
+            devices = audio_engine.list_playback_devices()
+
+        self.assertEqual(devices, [(0, "Speakers (MME)")])
+
+    def test_a_broken_audio_backend_lists_nothing_rather_than_crashing(self):
+        with mock.patch.object(
+            audio_engine.sd, "query_devices", side_effect=RuntimeError("no audio")
+        ):
+            self.assertEqual(audio_engine.list_capture_devices(), [])
+            self.assertEqual(audio_engine.list_playback_devices(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

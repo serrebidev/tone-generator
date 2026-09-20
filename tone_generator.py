@@ -9,12 +9,16 @@ Help). The main window keeps only the controls you reach for constantly:
 frequency, preset jump, play/stop, volume.
 
 Ctrl+L, or the Find loudest frequency button, stops any generated tone, records
-about three seconds from the default input device on a worker thread, and sets
-the frequency control to the loudest spectral component it hears. The result is
-announced with a message box; the detected tone is never played automatically.
+about three seconds from the chosen listening device on a worker thread, and
+sets the frequency control to the loudest spectral component it hears. The
+result is announced with a message box; the detected tone is never played
+automatically.
 
-Step sizes for Ctrl+Up/Down and Ctrl+Shift+Up/Down are configurable via
-Settings -> Step sizes... and persist between sessions via wx.Config.
+Settings -> Listening device chooses what to listen to: a microphone, line in, a
+loopback such as Stereo Mix, or any other device that can capture audio.
+Settings -> Output device chooses where the tone is played, so it can go to
+speakers, headphones, or another interface. Both choices, and the step sizes
+from Settings -> Step sizes..., persist between sessions via wx.Config.
 """
 
 import threading
@@ -25,6 +29,8 @@ from audio_engine import (
     DEFAULT_CAPTURE_SECONDS,
     ToneGenerator,
     detect_loudest_frequency,
+    list_capture_devices,
+    list_playback_devices,
     record_mono,
 )
 
@@ -33,6 +39,10 @@ CONFIG_APP_NAME = "ToneGenerator"
 APP_VERSION = "1.0.1"
 CFG_SMALL_STEP = "small_step"
 CFG_LARGE_STEP = "large_step"
+CFG_LISTEN_DEVICE = "listen_device"
+CFG_OUTPUT_DEVICE = "output_device"
+# Stored for "system default", because wx.Config has no null integer.
+DEVICE_SYSTEM_DEFAULT = -1
 DEFAULT_SMALL_STEP = 10
 DEFAULT_LARGE_STEP = 100
 STEP_MIN = 1
@@ -118,6 +128,8 @@ class MainFrame(wx.Frame):
         self._wave_ids: dict[int, str] = {}
         self._chan_ids: dict[int, str] = {}
         self._fixed_ids: dict[int, int] = {}
+        self._listen_ids: dict[int, int | None] = {}
+        self._output_ids: dict[int, int | None] = {}
 
         # Menu item handles for the configurable step shortcuts.
         self._small_up_item: wx.MenuItem | None = None
@@ -152,12 +164,51 @@ class MainFrame(wx.Frame):
         self.large_step = max(
             STEP_MIN, min(STEP_MAX, cfg.ReadInt(CFG_LARGE_STEP, DEFAULT_LARGE_STEP))
         )
+        # Devices are remembered by name, not by index: Windows renumbers them
+        # as hardware is plugged in, so an index can quietly point at a
+        # different device next session.
+        self.listen_devices = list_capture_devices()
+        self.playback_devices = list_playback_devices()
+        self.listen_label = cfg.Read(CFG_LISTEN_DEVICE, "")
+        self.output_label = cfg.Read(CFG_OUTPUT_DEVICE, "")
+        self.listen_device = self._index_for(self.listen_label, self.listen_devices)
+        self.output_device = self._index_for(self.output_label, self.playback_devices)
+        if self.listen_device is None:
+            self.listen_label = ""
+        if self.output_device is None:
+            self.output_label = ""
+        self.gen.set_output_device(self.output_device)
 
     def _save_prefs(self):
         cfg = self._config()
         cfg.WriteInt(CFG_SMALL_STEP, self.small_step)
         cfg.WriteInt(CFG_LARGE_STEP, self.large_step)
+        cfg.Write(CFG_LISTEN_DEVICE, self.listen_label)
+        cfg.Write(CFG_OUTPUT_DEVICE, self.output_label)
         cfg.Flush()
+
+    @staticmethod
+    def _index_for(label: str, devices: list[tuple[int, str]]) -> int | None:
+        """Device index for a remembered name, or None for the system default."""
+        if not label:
+            return None
+        for index, name in devices:
+            if name == label:
+                return index
+        return None
+
+    @staticmethod
+    def _label_for(device: int | None, devices: list[tuple[int, str]]) -> str:
+        for index, label in devices:
+            if index == device:
+                return label
+        return ""
+
+    @classmethod
+    def _describe_device(cls, device: int | None, devices: list[tuple[int, str]]) -> str:
+        if device is None:
+            return "the system default device"
+        return cls._label_for(device, devices) or f"device {device}"
 
     # ---------- menu ----------
     def _build_menu(self):
@@ -180,9 +231,7 @@ class MainFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self._on_set_frequency, id=set_id)
 
         find_id = wx.NewIdRef()
-        self._find_item = freq_menu.Append(
-            find_id, "Find &loudest frequency (microphone)\tCtrl+L"
-        )
+        self._find_item = freq_menu.Append(find_id, "Find &loudest frequency\tCtrl+L")
         self.Bind(wx.EVT_MENU, self._on_find_loudest_frequency, id=find_id)
         freq_menu.AppendSeparator()
 
@@ -241,6 +290,28 @@ class MainFrame(wx.Frame):
             self.Bind(wx.EVT_MENU, self._on_menu_channel, id=mid)
         settings_menu.AppendSubMenu(chan_sub, "Stereo &channel")
 
+        listen_sub = wx.Menu()
+        self._fill_device_menu(
+            listen_sub,
+            self._listen_ids,
+            self.listen_devices,
+            self.listen_device,
+            self._on_menu_listen_device,
+            "No capture devices found",
+        )
+        settings_menu.AppendSubMenu(listen_sub, "&Listening device")
+
+        output_sub = wx.Menu()
+        self._fill_device_menu(
+            output_sub,
+            self._output_ids,
+            self.playback_devices,
+            self.output_device,
+            self._on_menu_output_device,
+            "No playback devices found",
+        )
+        settings_menu.AppendSubMenu(output_sub, "&Output device")
+
         settings_menu.AppendSeparator()
         steps_id = wx.NewIdRef()
         settings_menu.Append(steps_id, "Step si&zes...\tCtrl+K")
@@ -256,6 +327,28 @@ class MainFrame(wx.Frame):
         menubar.Append(help_menu, "&Help")
 
         self.SetMenuBar(menubar)
+
+    def _fill_device_menu(self, menu, ids, devices, current, handler, empty_note):
+        """Radio list of the system default plus every candidate device."""
+        default_id = wx.NewIdRef()
+        item = menu.AppendRadioItem(default_id, "System &default")
+        ids[int(default_id)] = None
+        if current is None:
+            item.Check(True)
+        self.Bind(wx.EVT_MENU, handler, id=default_id)
+
+        for index, label in devices:
+            mid = wx.NewIdRef()
+            item = menu.AppendRadioItem(mid, label)
+            ids[int(mid)] = index
+            if index == current:
+                item.Check(True)
+            self.Bind(wx.EVT_MENU, handler, id=mid)
+
+        if not devices:
+            menu.AppendSeparator()
+            note = menu.Append(wx.NewIdRef(), empty_note)
+            note.Enable(False)
 
     def _refresh_step_labels(self):
         """Update menu labels and the main-window hint after step change."""
@@ -308,7 +401,7 @@ class MainFrame(wx.Frame):
 
         self.find_btn = wx.Button(panel, label="Find &loudest frequency (Ctrl+L)")
         self.find_btn.SetName(
-            "Find loudest frequency using the microphone, Control L"
+            "Find loudest frequency from the listening device, Control L"
         )
         self.find_btn.Bind(wx.EVT_BUTTON, self._on_find_loudest_frequency)
         freq_box.Add(self.find_btn, 0, wx.EXPAND | wx.ALL, 5)
@@ -392,13 +485,14 @@ class MainFrame(wx.Frame):
     def _on_find_loudest_frequency(self, _event):
         if self._listening:
             return
-        # Stop generated audio first: otherwise the microphone hears this
+        # Stop generated audio first: otherwise the listening device hears this
         # window's own tone instead of the sound source being measured.
         self.gen.stop()
         self.play_btn.SetLabel("&Play")
         self._set_listening(True)
         self.SetStatusText(
-            f"Listening to the microphone for {DEFAULT_CAPTURE_SECONDS:.0f} seconds..."
+            f"Listening to {self._describe_device(self.listen_device, self.listen_devices)} "
+            f"for {DEFAULT_CAPTURE_SECONDS:.0f} seconds..."
         )
         threading.Thread(target=self._listen_worker, daemon=True).start()
 
@@ -413,9 +507,9 @@ class MainFrame(wx.Frame):
         result = None
         error = None
         try:
-            samples, rate = record_mono()
+            samples, rate = record_mono(device=self.listen_device)
             result = detect_loudest_frequency(samples, rate)
-        except Exception as exc:  # no input device, device busy, driver error
+        except Exception as exc:  # device missing, device busy, driver error
             error = exc
         if not self._closing:
             wx.CallAfter(self._finish_listening, result, error)
@@ -424,15 +518,16 @@ class MainFrame(wx.Frame):
         if self._closing:
             return
         self._set_listening(False)
+        source = self._describe_device(self.listen_device, self.listen_devices)
 
         if error is not None:
-            self.SetStatusText("Microphone listening failed")
+            self.SetStatusText("Listening failed")
             wx.MessageBox(
-                "Could not record from the microphone.\n\n"
+                f"Could not listen on {source}.\n\n"
                 f"{error}\n\n"
-                "Check that a microphone or other input device is connected "
-                "and enabled in Windows sound settings, then try again.",
-                "Microphone error",
+                "Check the Listening device under the Settings menu, and that "
+                "the device is connected and enabled in Windows sound settings.",
+                "Listening error",
                 wx.OK | wx.ICON_ERROR,
             )
             self.find_btn.SetFocus()
@@ -441,10 +536,10 @@ class MainFrame(wx.Frame):
         if result is None:
             self.SetStatusText("No frequency found")
             wx.MessageBox(
-                "No clear frequency was found. The recording was silent, too "
-                "quiet, or had no single strong tone.\n\n"
-                "Move the microphone closer to the sound source or make the "
-                "sound louder, then try again.",
+                f"No clear frequency was heard on {source}. The recording was "
+                "silent, too quiet, or had no single strong tone.\n\n"
+                "Try a closer source or a louder sound, or check the Listening "
+                "device under the Settings menu.",
                 "No frequency found",
                 wx.OK | wx.ICON_INFORMATION,
             )
@@ -457,12 +552,47 @@ class MainFrame(wx.Frame):
         self.freq_input.SetFocus()
         self.SetStatusText(f"Loudest frequency: {hertz} Hz")
         wx.MessageBox(
-            f"Loudest frequency: {hertz} Hz.\n\n"
+            f"Loudest frequency on {source}: {hertz} Hz.\n\n"
             "The frequency control now holds this value. The tone is not "
             "playing. Press F5 or the Play button to hear it.",
             "Loudest frequency found",
             wx.OK | wx.ICON_INFORMATION,
         )
+
+    def _on_menu_listen_device(self, event):
+        device = self._listen_ids.get(event.GetId())
+        self.listen_device = device
+        self.listen_label = self._label_for(device, self.listen_devices)
+        self._save_prefs()
+        self.SetStatusText(
+            f"Listening device: {self._describe_device(device, self.listen_devices)}"
+        )
+
+    def _on_menu_output_device(self, event):
+        device = self._output_ids.get(event.GetId())
+        was_playing = self.gen.is_playing
+        self.output_device = device
+        self.output_label = self._label_for(device, self.playback_devices)
+        self.gen.set_output_device(device)
+        self._save_prefs()
+        description = self._describe_device(device, self.playback_devices)
+        if was_playing and self._start_playback():
+            self.SetStatusText(f"Output device: {description}. Playing.")
+        else:
+            self.SetStatusText(f"Output device: {description}")
+
+    def _start_playback(self) -> bool:
+        try:
+            self.gen.start()
+        except Exception as exc:
+            wx.MessageBox(
+                f"Could not start audio stream:\n{exc}",
+                "Audio error",
+                wx.OK | wx.ICON_ERROR,
+            )
+            return False
+        self.play_btn.SetLabel("&Stop")
+        return True
 
     def _on_configure_steps(self, _event):
         dlg = StepConfigDialog(self, self.small_step, self.large_step)
@@ -490,17 +620,7 @@ class MainFrame(wx.Frame):
             self.gen.stop()
             self.play_btn.SetLabel("&Play")
             self.SetStatusText("Stopped")
-        else:
-            try:
-                self.gen.start()
-            except Exception as exc:
-                wx.MessageBox(
-                    f"Could not start audio stream:\n{exc}",
-                    "Audio error",
-                    wx.OK | wx.ICON_ERROR,
-                )
-                return
-            self.play_btn.SetLabel("&Stop")
+        elif self._start_playback():
             self.SetStatusText(
                 f"Playing {self.gen.frequency:.0f} Hz "
                 f"{self.gen.waveform} on {self.gen.channel}"
@@ -528,7 +648,7 @@ class MainFrame(wx.Frame):
             "Keyboard shortcuts:\n\n"
             "F5                      Play / Stop\n"
             "Ctrl+G                  Set frequency...\n"
-            "Ctrl+L                  Find loudest frequency using the microphone\n"
+            "Ctrl+L                  Find loudest frequency from the listening device\n"
             "Ctrl+K                  Configure step sizes...\n"
             "Up / Down               +/-50 Hz (frequency field focused)\n"
             f"Ctrl+Up / Ctrl+Down     +/-{self.small_step} Hz (configurable)\n"
@@ -536,7 +656,8 @@ class MainFrame(wx.Frame):
             "Ctrl+Q                  Exit\n"
             "F1                      This help\n"
             "Alt+F / Y / R / S / H   Open File / Playback / Frequency /\n"
-            "                        Settings / Help menus"
+            "                        Settings / Help menus\n"
+            "Alt+S then L / O        Choose the Listening or Output device\n"
         )
         wx.MessageBox(msg, "Keyboard shortcuts", wx.OK | wx.ICON_INFORMATION)
 

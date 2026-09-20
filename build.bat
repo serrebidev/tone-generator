@@ -13,8 +13,18 @@ if /I not "%MODE%"=="build" if /I not "%MODE%"=="release" if /I not "%MODE%"=="d
 
 pushd "%~dp0"
 
-%PYTHON_CMD% --version >nul 2>&1
+rem `call` matters here: py may resolve to a .cmd wrapper (for example a py.cmd
+rem shim ahead of the real launcher). Running a .cmd from a batch file without
+rem call hands over this script's control permanently, so the script would end
+rem silently at this line and never reach the python fallback.
+call %PYTHON_CMD% --version >nul 2>&1
 if errorlevel 1 set "PYTHON_CMD=python"
+call %PYTHON_CMD% --version >nul 2>&1
+if errorlevel 1 (
+    echo [build] No usable Python interpreter found ^(tried py -3.14 and python^).
+    popd
+    exit /b 1
+)
 
 if /I "%MODE%"=="build" (
     call :build_app
@@ -48,10 +58,10 @@ exit /b 0
 
 :build_app
 echo [build] Installing build dependencies...
-%PYTHON_CMD% -m pip install -r requirements-build.txt
+call %PYTHON_CMD% -m pip install -r requirements-build.txt
 if errorlevel 1 exit /b 1
 echo [build] Running PyInstaller...
-%PYTHON_CMD% -m PyInstaller --noconfirm --clean tone_generator.spec
+call %PYTHON_CMD% -m PyInstaller --noconfirm --clean tone_generator.spec
 if errorlevel 1 exit /b 1
 if not exist "dist\%EXE_NAME%" (
     echo [build] Expected output not found: dist\%EXE_NAME%

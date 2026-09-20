@@ -71,7 +71,10 @@ exit /b 0
 
 :compute_next_version
 set "NEXT_VERSION="
-for /f "delims=" %%V in ('powershell -NoProfile -Command "$tags = git tag --list 'v*.*.*'; $versions = foreach ($tag in $tags) { try { [version]($tag -replace '^v','') } catch {} }; $latest = $versions ^| Sort-Object -Descending ^| Select-Object -First 1; if ($latest) { '{0}.{1}.{2}' -f $latest.Major, $latest.Minor, ($latest.Build + 1) } else { '1.0.0' }"') do set "NEXT_VERSION=%%V"
+rem usebackq with backticks, so the single quotes inside the PowerShell command
+rem do not collide with the for /f delimiter. No caret escapes: cmd does not
+rem strip them here and PowerShell would receive a literal ^.
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$best=$null; foreach ($t in (git tag --list 'v*.*.*')) { try { $v=[version]$t.Substring(1) } catch { continue }; if (-not $best -or $v -gt $best) { $best=$v } }; if ($best) { '{0}.{1}.{2}' -f $best.Major, $best.Minor, ($best.Build + 1) } else { '1.0.0' }"`) do set "NEXT_VERSION=%%V"
 if "%NEXT_VERSION%"=="" (
     echo [release] Failed to compute next version.
     exit /b 1
@@ -105,7 +108,9 @@ copy /Y "dist\%EXE_NAME%" "%RELEASE_DIR%\%APP_NAME%-v%NEXT_VERSION%.exe" >nul ||
 powershell -NoProfile -Command "Compress-Archive -Path '%RELEASE_DIR%\%APP_NAME%-v%NEXT_VERSION%.exe' -DestinationPath '%RELEASE_DIR%\%APP_NAME%-v%NEXT_VERSION%.zip' -Force"
 if errorlevel 1 exit /b 1
 set "SUMS_PATH=%RELEASE_DIR%\%APP_NAME%-v%NEXT_VERSION%-SHA256SUMS.txt"
-powershell -NoProfile -Command "Get-ChildItem -LiteralPath '%RELEASE_DIR%' -File ^| Sort-Object Name ^| ForEach-Object { '{0}  {1}' -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(), $_.Name } ^| Set-Content -LiteralPath '%SUMS_PATH%' -Encoding ascii"
+rem Hash with .NET rather than Get-FileHash, which is missing from some Windows
+rem PowerShell installations.
+powershell -NoProfile -Command "$sha=[Security.Cryptography.SHA256]::Create(); $lines=@(); foreach ($p in ([IO.Directory]::GetFiles('%RELEASE_DIR%') | Sort-Object)) { $hash=($sha.ComputeHash([IO.File]::ReadAllBytes($p)) | ForEach-Object { $_.ToString('x2') }) -join ''; $lines += ('{0}  {1}' -f $hash, [IO.Path]::GetFileName($p)) }; [IO.File]::WriteAllLines('%SUMS_PATH%', $lines)"
 if errorlevel 1 exit /b 1
 set "NOTES_PATH=%RELEASE_DIR%\release-notes-v%NEXT_VERSION%.md"
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $v='%NEXT_VERSION%'; $lines=Get-Content -LiteralPath 'CHANGELOG.md'; $body=@(); $on=$false; foreach ($line in $lines) { if ($line -like '## *') { if ($on) { break }; if ($line -like ('## ' + $v + '*')) { $on=$true; continue } }; if ($on) { $body += $line } }; $body=($body -join [char]10).Trim(); if (-not $body) { Write-Host ('[release] No CHANGELOG.md section for ' + $v + ', using a generic note.'); $body='- Built with build.bat release.' }; $nl=[char]10; [IO.File]::WriteAllText('%NOTES_PATH%', ('## Tone Generator v' + $v + $nl + $nl + $body))"
@@ -141,7 +146,7 @@ exit /b 0
 
 :delete_draft_releases
 echo [release] Checking for draft releases in %GITHUB_REPO_SLUG%...
-powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $repo='%GITHUB_REPO_SLUG%'; $drafts = gh release list --repo $repo --limit 100 --json tagName,isDraft ^| ConvertFrom-Json ^| Where-Object { $_.isDraft }; foreach ($draft in $drafts) { Write-Host ('Deleting draft release ' + $draft.tagName + '...'); gh release delete $draft.tagName --repo $repo --yes }"
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $repo='%GITHUB_REPO_SLUG%'; $drafts = gh release list --repo $repo --limit 100 --json tagName,isDraft | ConvertFrom-Json | Where-Object { $_.isDraft }; foreach ($draft in $drafts) { Write-Host ('Deleting draft release ' + $draft.tagName + '...'); gh release delete $draft.tagName --repo $repo --yes }"
 if errorlevel 1 (
     echo [release] Failed to remove draft releases.
     exit /b 1

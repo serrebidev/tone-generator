@@ -36,7 +36,7 @@ from audio_engine import (
 
 
 CONFIG_APP_NAME = "ToneGenerator"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 CFG_SMALL_STEP = "small_step"
 CFG_LARGE_STEP = "large_step"
 CFG_LISTEN_DEVICE = "listen_device"
@@ -685,4 +685,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

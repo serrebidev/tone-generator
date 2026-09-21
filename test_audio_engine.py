@@ -1,5 +1,6 @@
 """Unit tests for audio_engine pure detection logic."""
 
+import contextlib
 import unittest
 from unittest import mock
 
@@ -215,6 +216,140 @@ class DeviceListingTests(unittest.TestCase):
         ):
             self.assertEqual(audio_engine.list_capture_devices(), [])
             self.assertEqual(audio_engine.list_playback_devices(), [])
+
+
+class _FakeSpeaker:
+    def __init__(self, name, identifier, channels=2):
+        self.name = name
+        self.id = identifier
+        self.channels = channels
+
+
+class _FakeSoundcard:
+    """Stands in for soundcard: speaker listing plus its loopback recorder."""
+
+    def __init__(self, samples, speakers):
+        self.samples = samples
+        self.speakers = speakers
+        self.opened = {}
+
+    def all_speakers(self):
+        return list(self.speakers)
+
+    def get_microphone(self, id, include_loopback):
+        self.opened["id"] = id
+        self.opened["include_loopback"] = include_loopback
+        return self
+
+    def recorder(self, samplerate, channels):
+        self.opened["samplerate"] = samplerate
+        self.opened["channels"] = channels
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def record(self, numframes):
+        self.opened["numframes"] = numframes
+        return self.samples
+
+
+class LoopbackTests(unittest.TestCase):
+    """Listening to what an output device is playing, without a microphone."""
+
+    SPEAKERS = [_FakeSpeaker("Speakers", "speaker-id", 2)]
+    OUTPUT_DEVICE = {
+        "name": "Speakers",
+        "hostapi": 0,
+        "max_input_channels": 0,
+        "max_output_channels": 2,
+        "default_samplerate": 48000.0,
+    }
+    HOSTAPIS = [{"name": "Windows WASAPI"}]
+
+    @contextlib.contextmanager
+    def _devices(self, backend):
+        """Pretend `backend` is soundcard, with one WASAPI output device."""
+
+        def query_devices(device=None):
+            if device is None:
+                return [self.OUTPUT_DEVICE]
+            return self.OUTPUT_DEVICE
+
+        with (
+            mock.patch.object(audio_engine, "_soundcard", backend),
+            mock.patch.object(audio_engine.sd, "query_devices", query_devices),
+            mock.patch.object(
+                audio_engine.sd, "query_hostapis", return_value=self.HOSTAPIS
+            ),
+        ):
+            yield backend
+
+    def test_every_output_device_is_offered_as_a_loopback_source(self):
+        backend = _FakeSoundcard(np.zeros((10, 2)), self.SPEAKERS)
+        with self._devices(backend):
+            devices = audio_engine.list_loopback_devices()
+
+        self.assertEqual(devices, [(-1000, "Speakers (loopback)")])
+        self.assertTrue(audio_engine.is_loopback_device(devices[0][0]))
+
+    def test_a_loopback_index_can_never_be_a_capture_index(self):
+        # PortAudio indices start at zero, so the synthetic loopback range must
+        # stay below it or a remembered device could name the wrong thing.
+        self.assertFalse(audio_engine.is_loopback_device(None))
+        self.assertFalse(audio_engine.is_loopback_device(0))
+        self.assertFalse(audio_engine.is_loopback_device(7))
+        self.assertTrue(
+            audio_engine.is_loopback_device(audio_engine.LOOPBACK_INDEX_BASE)
+        )
+
+    def test_no_loopback_sources_without_soundcard(self):
+        with mock.patch.object(audio_engine, "_soundcard", None):
+            self.assertEqual(audio_engine.list_loopback_devices(), [])
+
+    def test_recording_a_loopback_follows_the_output_device_rate(self):
+        captured = np.zeros((24000, 2), dtype="float32")
+        backend = _FakeSoundcard(captured, self.SPEAKERS)
+        with self._devices(backend):
+            devices = audio_engine.list_loopback_devices()
+            samples, rate = audio_engine.record_mono(
+                seconds=0.5, device=devices[0][0]
+            )
+
+        self.assertEqual(rate, 48000)
+        self.assertEqual(backend.opened["samplerate"], 48000)
+        self.assertEqual(backend.opened["numframes"], 24000)
+        self.assertEqual(backend.opened["id"], "speaker-id")
+        self.assertTrue(backend.opened["include_loopback"])
+        self.assertEqual(samples.shape, (24000,))
+
+    def test_recording_a_loopback_averages_the_channels(self):
+        # A tone panned hard right still has to be measured, so both channels
+        # are folded in rather than one being read.
+        captured = np.zeros((100, 2), dtype="float32")
+        captured[:, 1] = 0.8
+        backend = _FakeSoundcard(captured, self.SPEAKERS)
+        with self._devices(backend):
+            devices = audio_engine.list_loopback_devices()
+            samples, _rate = audio_engine.record_mono(
+                seconds=0.5, device=devices[0][0]
+            )
+
+        self.assertEqual(backend.opened["channels"], 2)
+        self.assertAlmostEqual(float(np.max(samples)), 0.4, places=6)
+
+    def test_a_loopback_device_that_is_gone_is_reported_as_unusable(self):
+        backend = _FakeSoundcard(np.zeros((10, 2)), self.SPEAKERS)
+        with mock.patch.object(audio_engine, "_soundcard", backend):
+            audio_engine.list_loopback_devices()
+            audio_engine._LOOPBACK_SPEAKERS.clear()
+            with self.assertRaises(RuntimeError) as caught:
+                audio_engine.record_mono(seconds=0.5, device=-1000)
+
+        self.assertIn("not available", str(caught.exception))
 
 
 if __name__ == "__main__":

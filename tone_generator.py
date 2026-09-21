@@ -14,11 +14,15 @@ sets the frequency control to the loudest spectral component it hears. The
 result is announced with a message box; the detected tone is never played
 automatically.
 
-Settings -> Listening device chooses what to listen to: a microphone, line in, a
-loopback such as Stereo Mix, or any other device that can capture audio.
-Settings -> Output device chooses where the tone is played, so it can go to
-speakers, headphones, or another interface. Both choices, and the step sizes
-from Settings -> Step sizes..., persist between sessions via wx.Config.
+Settings -> Listening device chooses what to listen to. Every output device is
+offered as a loopback source, which measures what Windows is sending to that
+device and needs no microphone; generated tones keep playing while a loopback
+is measured, because there has to be something on the output to hear. Below
+those come the capture devices: a microphone, line in, a loopback such as
+Stereo Mix, or any other device that can capture audio. Settings -> Output
+device chooses where the tone is played, so it can go to speakers, headphones,
+or another interface. Both choices, and the step sizes from Settings -> Step
+sizes..., persist between sessions via wx.Config.
 """
 
 import threading
@@ -29,7 +33,9 @@ from audio_engine import (
     DEFAULT_CAPTURE_SECONDS,
     ToneGenerator,
     detect_loudest_frequency,
+    is_loopback_device,
     list_capture_devices,
+    list_loopback_devices,
     list_playback_devices,
     record_mono,
 )
@@ -139,10 +145,12 @@ class MainFrame(wx.Frame):
         self._find_item: wx.MenuItem | None = None
         self._hint_text: wx.StaticText | None = None
 
-        # True while a microphone capture is in flight, and once the window is
-        # closing so a late worker result is dropped instead of touching dead
-        # controls.
+        # True while a capture is in flight, and once the window is closing so a
+        # late worker result is dropped instead of touching dead controls.
+        # _measuring_output records whether that capture is a loopback of an
+        # output device, which changes both playback and the wording.
         self._listening = False
+        self._measuring_output = False
         self._closing = False
 
         self._load_prefs()
@@ -167,7 +175,10 @@ class MainFrame(wx.Frame):
         # Devices are remembered by name, not by index: Windows renumbers them
         # as hardware is plugged in, so an index can quietly point at a
         # different device next session.
-        self.listen_devices = list_capture_devices()
+        # Output loopbacks are listed first: they measure the output without
+        # needing a microphone, and Windows machines with no input device at
+        # all report only those.
+        self.listen_devices = list_loopback_devices() + list_capture_devices()
         self.playback_devices = list_playback_devices()
         self.listen_label = cfg.Read(CFG_LISTEN_DEVICE, "")
         self.output_label = cfg.Read(CFG_OUTPUT_DEVICE, "")
@@ -485,15 +496,26 @@ class MainFrame(wx.Frame):
     def _on_find_loudest_frequency(self, _event):
         if self._listening:
             return
-        # Stop generated audio first: otherwise the listening device hears this
-        # window's own tone instead of the sound source being measured.
-        self.gen.stop()
-        self.play_btn.SetLabel("&Play")
+        self._measuring_output = is_loopback_device(self.listen_device)
+        if not self._measuring_output:
+            # Stop generated audio first: otherwise the listening device hears
+            # this window's own tone instead of the sound source being measured.
+            self.gen.stop()
+            self.play_btn.SetLabel("&Play")
+        # A loopback measurement leaves playback alone on purpose: it only
+        # hears what the output device is playing, so silence finds nothing,
+        # and the tone already running is what gets measured.
+        source = self._describe_device(self.listen_device, self.listen_devices)
+        seconds = DEFAULT_CAPTURE_SECONDS
         self._set_listening(True)
-        self.SetStatusText(
-            f"Listening to {self._describe_device(self.listen_device, self.listen_devices)} "
-            f"for {DEFAULT_CAPTURE_SECONDS:.0f} seconds..."
-        )
+        if self._measuring_output:
+            self.SetStatusText(
+                f"Listening to what {source} is playing for {seconds:.0f} seconds..."
+            )
+        else:
+            self.SetStatusText(
+                f"Listening to {source} for {seconds:.0f} seconds..."
+            )
         threading.Thread(target=self._listen_worker, daemon=True).start()
 
     def _set_listening(self, listening: bool):
@@ -535,13 +557,21 @@ class MainFrame(wx.Frame):
 
         if result is None:
             self.SetStatusText("No frequency found")
+            if self._measuring_output:
+                detail = (
+                    f"Nothing was audible on {source}. A loopback only hears "
+                    "what that output device is playing, so start the tone with "
+                    "F5, or play music or a sweep, and try again."
+                )
+            else:
+                detail = (
+                    f"No clear frequency was heard on {source}. The recording "
+                    "was silent, too quiet, or had no single strong tone.\n\n"
+                    "Try a closer source or a louder sound, or check the "
+                    "Listening device under the Settings menu."
+                )
             wx.MessageBox(
-                f"No clear frequency was heard on {source}. The recording was "
-                "silent, too quiet, or had no single strong tone.\n\n"
-                "Try a closer source or a louder sound, or check the Listening "
-                "device under the Settings menu.",
-                "No frequency found",
-                wx.OK | wx.ICON_INFORMATION,
+                detail, "No frequency found", wx.OK | wx.ICON_INFORMATION
             )
             self.find_btn.SetFocus()
             return
@@ -551,10 +581,23 @@ class MainFrame(wx.Frame):
         self.gen.set_frequency(hertz)
         self.freq_input.SetFocus()
         self.SetStatusText(f"Loudest frequency: {hertz} Hz")
+        note = ""
+        if self._measuring_output:
+            note = (
+                "This is the signal Windows sent to that output device, not a "
+                "microphone recording, so it shows what system effects and "
+                "equalisers did to the tone. Hearing what a speaker or headphone "
+                "really produces needs a microphone.\n\n"
+            )
+        closing = (
+            "Playback is still running; press F5 to stop it."
+            if self.gen.is_playing
+            else "The tone is not playing. Press F5 or the Play button to hear it."
+        )
         wx.MessageBox(
             f"Loudest frequency on {source}: {hertz} Hz.\n\n"
-            "The frequency control now holds this value. The tone is not "
-            "playing. Press F5 or the Play button to hear it.",
+            f"{note}"
+            f"The frequency control now holds this value. {closing}",
             "Loudest frequency found",
             wx.OK | wx.ICON_INFORMATION,
         )

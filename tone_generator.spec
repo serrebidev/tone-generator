@@ -4,7 +4,8 @@ PyInstaller build spec for Tone Generator.
 
 Produces a single portable Windows executable at dist\\ToneGenerator.exe
 that includes wxPython, NumPy, and the PortAudio DLL that sounddevice
-needs at runtime.
+needs at runtime, plus soundcard's WASAPI loopback support so the output
+of a playback device can be listened to without a microphone.
 
 Usage:
     pip install -r requirements.txt
@@ -22,7 +23,10 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 # without a separate PortAudio installation.
 sd_datas = collect_data_files("_sounddevice_data") + copy_metadata("sounddevice")
 sd_binaries = collect_dynamic_libs("_sounddevice_data")
-sd_hidden = ["_sounddevice", "_sounddevice_data"]
+# soundcard ships its own hook (auto-loaded from its entry point) which brings
+# the cffi headers it compiles at runtime. Its Windows backend is imported
+# behind a sys.platform test, so name it here as well.
+sd_hidden = ["_sounddevice", "_sounddevice_data", "soundcard.mediafoundation"]
 
 a = Analysis(
     ["tone_generator.py"],

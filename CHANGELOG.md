@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3 - 2026-09-21
+
+- Find loudest frequency (Ctrl+L) can now listen to the output. Every output device is offered as a loopback source in Settings -> Listening device, so a tone, music, or a sweep can be measured on speakers, headphones, or another interface without any microphone. PortAudio cannot open a playback device for capture, so this uses soundcard's WASAPI loopback.
+- Listening to an output now works on machines where Windows reports no recording device at all, and where the only capture devices are WDM-KS ones that hand back uninitialised memory instead of audio.
+- Leaves generated playback running while a loopback is measured, because a silent output has nothing to find. Microphone listening still stops the tone first, so it never measures this window's own output.
+- Folds both loopback channels into the measurement, so a tone panned hard to one side is still found.
+- Says what a loopback result is: the signal Windows sent to the output device, including system effects and equalisers, and not what the speaker or headphone itself produces.
+
 ## 1.0.2 - 2026-09-20
 
 - Find loudest frequency now listens to any capture device instead of only the microphone. Settings -> Listening device lists the system default plus every device that can supply audio, including line in and loopback devices such as Stereo Mix.

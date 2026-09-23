@@ -4,8 +4,8 @@
 
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 4, 0),
-    prodvers=(1, 0, 4, 0),
+    filevers=(1, 0, 5, 0),
+    prodvers=(1, 0, 5, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -20,17 +20,18 @@ VSVersionInfo(
         [
           StringStruct("CompanyName", "Tone Generator"),
           StringStruct("FileDescription", "Accessible audio test-tone generator"),
-          StringStruct("FileVersion", "1.0.4"),
+          StringStruct("FileVersion", "1.0.5"),
           StringStruct("InternalName", "ToneGenerator"),
           StringStruct("OriginalFilename", "ToneGenerator.exe"),
           StringStruct("ProductName", "Tone Generator"),
-          StringStruct("ProductVersion", "1.0.4"),
+          StringStruct("ProductVersion", "1.0.5"),
         ],
       )
     ]),
     VarFileInfo([VarStruct("Translation", [1033, 1200])]),
   ],
 )
+
 
 
 

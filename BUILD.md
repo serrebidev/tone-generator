@@ -10,6 +10,8 @@ build.bat dry-run
 build.bat release
 ```
 
+macOS and Linux: `./build.sh` (see AGENTS.md). Cloud agents release every platform with `.github/workflows/cloud-release.yml`.
+
 ## Release Rules
 
 - Release from `main`.

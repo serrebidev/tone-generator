@@ -16,6 +16,8 @@ The resulting dist\\ToneGenerator.exe has no external dependencies and
 can be copied to any Windows machine.
 """
 
+import sys
+
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, copy_metadata
 
 # sounddevice ships PortAudio DLLs in the _sounddevice_data package. Collect
@@ -24,9 +26,14 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 sd_datas = collect_data_files("_sounddevice_data") + copy_metadata("sounddevice")
 sd_binaries = collect_dynamic_libs("_sounddevice_data")
 # soundcard ships its own hook (auto-loaded from its entry point) which brings
-# the cffi headers it compiles at runtime. Its Windows backend is imported
+# the cffi headers it compiles at runtime. Its per-OS backend is imported
 # behind a sys.platform test, so name it here as well.
-sd_hidden = ["_sounddevice", "_sounddevice_data", "soundcard.mediafoundation"]
+sd_hidden = ["_sounddevice", "_sounddevice_data"]
+sd_hidden.append(
+    {"win32": "soundcard.mediafoundation", "darwin": "soundcard.coreaudio"}.get(
+        sys.platform, "soundcard.pulseaudio"
+    )
+)
 
 a = Analysis(
     ["tone_generator.py"],
@@ -62,5 +69,18 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version="version_info.txt",
+    version="version_info.txt" if sys.platform == "win32" else None,
 )
+
+# macOS: wrap the one-file executable in an app bundle (build.sh zips it).
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="ToneGenerator.app",
+        bundle_identifier="com.serrebidev.tonegenerator",
+        info_plist={
+            "NSMicrophoneUsageDescription": "Tone Generator listens to measure the tone it plays.",
+            "NSHighResolutionCapable": True,
+        },
+    )
+

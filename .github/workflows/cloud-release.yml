@@ -1,6 +1,6 @@
 name: Cloud Release
 
-# Cloud agents ONLY. On the Windows release host run `build.bat release`.
+# Muse agent and cloud agents ONLY. On the Windows release host run `build.bat release`.
 # Windows runs the same build.bat on a GitHub runner (version, notes, commit,
 # tag and release are exactly what the local release makes); macOS and Linux
 # then build that tag with build.sh and attach their packages.

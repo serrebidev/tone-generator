@@ -149,6 +149,12 @@ if errorlevel 1 (
     exit /b 1
 )
 call :delete_draft_releases || exit /b 1
+rem macOS on a GitHub runner, Linux over SSH (no-op on GitHub Actions).
+call %PYTHON_CMD% tools\release_other_platforms.py "v%NEXT_VERSION%"
+if errorlevel 1 (
+    echo [release] Linux/macOS assets failed. Rerun: python tools\release_other_platforms.py v%NEXT_VERSION%
+    exit /b 1
+)
 exit /b 0
 
 :delete_draft_releases

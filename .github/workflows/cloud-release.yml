@@ -41,12 +41,12 @@ jobs:
           echo "::error::Cloud releases run from main only (got ${{ github.ref }})."
           exit 1
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
 
@@ -85,7 +85,7 @@ jobs:
             echo "ref=$tag" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: ToneGenerator-windows
           path: dist/ToneGenerator.exe
@@ -104,11 +104,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.windows.outputs.ref }}
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: ${{ runner.os == 'macOS' }}
         with:
           python-version: "3.14"
@@ -132,7 +132,7 @@ jobs:
           timeout 10 xvfb-run -a dist/ToneGenerator
           [ $? = 124 ] || { echo "::error::ToneGenerator exited before 10 s"; exit 1; }
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}

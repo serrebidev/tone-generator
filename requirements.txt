@@ -1,4 +1,4 @@
-wxPython>=4.3.1
+wxPython>=4.2  # floor stays 4.2: the Linux build uses Ubuntu's system wxPython, which pip must accept as-is
 numpy>=2.5.3
 sounddevice>=0.5.6
 # Listens to what an output device is playing (WASAPI loopback). PortAudio

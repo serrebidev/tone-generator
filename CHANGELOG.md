@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.6 - 2026-09-28
+
+- Dependency refresh: wxPython 4.3.1, NumPy 2.5.3, sounddevice 0.5.6, soundcard 0.4.6, PyInstaller 6.22.3.
+
 ## 1.0.3 - 2026-09-21
 
 - Find loudest frequency (Ctrl+L) can now listen to the output. Every output device is offered as a loopback source in Settings -> Listening device, so a tone, music, or a sweep can be measured on speakers, headphones, or another interface without any microphone. PortAudio cannot open a playback device for capture, so this uses soundcard's WASAPI loopback.

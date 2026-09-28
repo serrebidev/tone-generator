@@ -1,10 +1,10 @@
-wxPython>=4.2
-numpy>=1.24
-sounddevice>=0.4
+wxPython>=4.3.1
+numpy>=2.5.3
+sounddevice>=0.5.6
 # Listens to what an output device is playing (WASAPI loopback). PortAudio
 # cannot open a playback device for capture, so this is the only way to
 # measure the output without a microphone.
-soundcard>=0.4
+soundcard>=0.4.6
 
 # Build-only (install separately to produce a portable .exe):
 #   pip install pyinstaller

@@ -218,6 +218,37 @@ class DeviceListingTests(unittest.TestCase):
             self.assertEqual(audio_engine.list_playback_devices(), [])
 
 
+
+class ToneCallbackTests(unittest.TestCase):
+    def render(self, gen, blocks, frames=512):
+        out = np.zeros((frames, 2), dtype=np.float32)
+        chunks = []
+        for _ in range(blocks):
+            gen._callback(out, frames, None, None)
+            chunks.append(out[:, 0].copy())
+        return np.concatenate(chunks)
+
+    def assert_continuous(self, wave, freq, rate, vol):
+        # A sine never moves more than 2*pi*f/rate*vol between samples.
+        limit = 2 * np.pi * freq / rate * vol * 1.01
+        self.assertLessEqual(float(np.max(np.abs(np.diff(wave)))), limit)
+
+    def test_fractional_frequency_has_no_click_when_the_phase_wraps(self):
+        gen = audio_engine.ToneGenerator(sample_rate=44100)
+        gen.set_frequency(1000.3)
+        # 200 blocks of 512 cross the old one-second phase wrap twice.
+        wave = self.render(gen, 200)
+        self.assert_continuous(wave, 1000.3, 44100, gen.volume)
+
+    def test_changing_frequency_continues_the_wave(self):
+        gen = audio_engine.ToneGenerator(sample_rate=44100)
+        gen.set_frequency(1000.0)
+        first = self.render(gen, 7)
+        gen.set_frequency(1100.0)
+        second = self.render(gen, 7)
+        self.assert_continuous(np.concatenate([first, second]), 1100.0, 44100, gen.volume)
+
+
 class _FakeSpeaker:
     def __init__(self, name, identifier, channels=2):
         self.name = name

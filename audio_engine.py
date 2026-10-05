@@ -301,8 +301,10 @@ class ToneGenerator:
             channel = self.channel
             phase = self._phase
 
-        t = (np.arange(frames) + phase) / self.sample_rate
-        theta = 2 * np.pi * freq * t
+        # Phase is kept in cycles, so a frequency change continues the wave
+        # from where it is instead of jumping, and wrapping never clicks.
+        cycles = phase + freq * np.arange(frames) / self.sample_rate
+        theta = 2 * np.pi * cycles
 
         if waveform == "Sine":
             wave = np.sin(theta)
@@ -311,7 +313,7 @@ class ToneGenerator:
         elif waveform == "Triangle":
             wave = (2 / np.pi) * np.arcsin(np.sin(theta))
         else:  # Sawtooth
-            wave = 2 * ((freq * t + 0.5) % 1.0) - 1
+            wave = 2 * ((cycles + 0.5) % 1.0) - 1
 
         wave = (wave * vol).astype(np.float32)
 
@@ -324,8 +326,9 @@ class ToneGenerator:
         outdata[:] = out
 
         with self._lock:
-            # Bound phase to avoid float precision drift over long sessions.
-            self._phase = (phase + frames) % max(self.sample_rate, 1)
+            # Only the fractional cycle matters; bounding it avoids float
+            # precision drift over long sessions.
+            self._phase = (phase + freq * frames / self.sample_rate) % 1.0
 
     def start(self):
         if self.is_playing:
@@ -335,6 +338,14 @@ class ToneGenerator:
         if self.output_device is not None:
             info = sd.query_devices(self.output_device)
             self.sample_rate = int(round(float(info["default_samplerate"])))
+        else:
+            # Back on the default output after a chosen device: drop that
+            # device's rate, which the default may not accept.
+            try:
+                info = sd.query_devices(kind="output")
+                self.sample_rate = int(round(float(info["default_samplerate"])))
+            except Exception:
+                pass
         self.stream = sd.OutputStream(
             samplerate=self.sample_rate,
             channels=2,

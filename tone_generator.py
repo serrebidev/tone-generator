@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tone Generator -- accessible wxPython UI.
 
 Run:
@@ -142,6 +142,7 @@ class MainFrame(wx.Frame):
         self._small_down_item: wx.MenuItem | None = None
         self._large_up_item: wx.MenuItem | None = None
         self._large_down_item: wx.MenuItem | None = None
+        self._play_item: wx.MenuItem | None = None
         self._find_item: wx.MenuItem | None = None
         self._hint_text: wx.StaticText | None = None
 
@@ -232,7 +233,7 @@ class MainFrame(wx.Frame):
 
         play_menu = wx.Menu()
         play_id = wx.NewIdRef()
-        play_menu.Append(play_id, "&Play / Stop\tF5")
+        self._play_item = play_menu.Append(play_id, "&Play / Stop\tF5")
         self.Bind(wx.EVT_MENU, self._on_toggle_play, id=play_id)
         menubar.Append(play_menu, "Pla&yback")
 
@@ -278,7 +279,7 @@ class MainFrame(wx.Frame):
             self._fixed_ids[int(mid)] = delta
             self.Bind(wx.EVT_MENU, self._on_fixed_delta, id=mid)
 
-        menubar.Append(freq_menu, "&Frequency")
+        menubar.Append(freq_menu, "F&requency")
 
         settings_menu = wx.Menu()
         wave_sub = wx.Menu()
@@ -395,22 +396,24 @@ class MainFrame(wx.Frame):
         vbox = wx.BoxSizer(wx.VERTICAL)
 
         freq_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Frequency")
+        freq_parent = freq_box.GetStaticBox()
         row = wx.BoxSizer(wx.HORIZONTAL)
-        label = wx.StaticText(panel, label="&Frequency in Hertz:")
+        label = wx.StaticText(freq_parent, label="&Frequency in Hertz:")
         self.freq_input = wx.SpinCtrlDouble(
-            panel, value="1000", min=self.FREQ_MIN, max=self.FREQ_MAX, inc=50
+            freq_parent, value="1000", min=self.FREQ_MIN, max=self.FREQ_MAX, inc=50
         )
         self.freq_input.SetDigits(0)
         self.freq_input.SetName("Frequency in Hertz, step 50")
         self.freq_input.Bind(wx.EVT_SPINCTRLDOUBLE, self._on_freq_change)
+        self.freq_input.Bind(wx.EVT_TEXT, self._on_freq_change)
         row.Add(label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         row.Add(self.freq_input, 1, wx.EXPAND)
         freq_box.Add(row, 0, wx.EXPAND | wx.ALL, 5)
 
-        self._hint_text = wx.StaticText(panel, label="")
+        self._hint_text = wx.StaticText(freq_parent, label="")
         freq_box.Add(self._hint_text, 0, wx.ALL, 5)
 
-        self.find_btn = wx.Button(panel, label="Find &loudest frequency (Ctrl+L)")
+        self.find_btn = wx.Button(freq_parent, label="Find &loudest frequency (Ctrl+L)")
         self.find_btn.SetName(
             "Find loudest frequency from the listening device, Control L"
         )
@@ -420,25 +423,29 @@ class MainFrame(wx.Frame):
         vbox.Add(freq_box, 0, wx.EXPAND | wx.ALL, 8)
 
         pre_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Preset frequencies")
-        pre_label = wx.StaticText(panel, label="Jump to &preset:")
-        self.preset_choice = wx.Choice(panel, choices=[p[0] for p in self.PRESETS])
+        pre_parent = pre_box.GetStaticBox()
+        pre_label = wx.StaticText(pre_parent, label="Jump to &preset:")
+        self.preset_choice = wx.Choice(pre_parent, choices=[p[0] for p in self.PRESETS])
         self.preset_choice.SetName("Preset frequency selector")
         self.preset_choice.Bind(wx.EVT_CHOICE, self._on_preset)
+        self._sync_preset_selection(1000)
         pre_box.Add(pre_label, 0, wx.ALL, 3)
         pre_box.Add(self.preset_choice, 0, wx.EXPAND | wx.ALL, 3)
         vbox.Add(pre_box, 0, wx.EXPAND | wx.ALL, 8)
 
         play_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Playback")
-        self.play_btn = wx.Button(panel, label="&Play")
+        play_parent = play_box.GetStaticBox()
+        self.play_btn = wx.Button(play_parent, label="&Play")
         self.play_btn.SetName("Play tone, toggle button. F5 also toggles.")
         self.play_btn.Bind(wx.EVT_BUTTON, self._on_toggle_play)
         play_box.Add(self.play_btn, 0, wx.EXPAND | wx.ALL, 5)
         vbox.Add(play_box, 0, wx.EXPAND | wx.ALL, 8)
 
         vol_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Volume")
-        vol_label = wx.StaticText(panel, label="&Volume, 0 to 100 percent:")
+        vol_parent = vol_box.GetStaticBox()
+        vol_label = wx.StaticText(vol_parent, label="&Volume, 0 to 100 percent:")
         self.vol_slider = wx.Slider(
-            panel,
+            vol_parent,
             value=30,
             minValue=0,
             maxValue=100,
@@ -459,8 +466,20 @@ class MainFrame(wx.Frame):
         )
 
     # ---------- handlers ----------
+    def _sync_preset_selection(self, freq: float):
+        for idx, (_label, p_freq) in enumerate(self.PRESETS):
+            if abs(p_freq - freq) < 0.5:
+                self.preset_choice.SetSelection(idx)
+                return
+        self.preset_choice.SetSelection(wx.NOT_FOUND)
+
     def _on_freq_change(self, _event):
-        self.gen.set_frequency(self.freq_input.GetValue())
+        try:
+            val = float(self.freq_input.GetValue())
+        except (ValueError, TypeError):
+            return
+        self.gen.set_frequency(val)
+        self._sync_preset_selection(val)
 
     def _on_fixed_delta(self, event):
         delta = self._fixed_ids.get(event.GetId(), 0)
@@ -472,11 +491,12 @@ class MainFrame(wx.Frame):
         new_val = max(self.FREQ_MIN, min(self.FREQ_MAX, current + delta))
         self.freq_input.SetValue(new_val)
         self.gen.set_frequency(new_val)
+        self._sync_preset_selection(new_val)
         self.freq_input.SetFocus()
         self.SetStatusText(f"Frequency {new_val:.0f} Hz")
 
     def _on_set_frequency(self, _event):
-        current = int(self.freq_input.GetValue())
+        current = int(round(self.freq_input.GetValue()))
         dlg = wx.NumberEntryDialog(
             self,
             f"Enter frequency in Hertz ({self.FREQ_MIN} to {self.FREQ_MAX}):",
@@ -490,6 +510,7 @@ class MainFrame(wx.Frame):
             val = dlg.GetValue()
             self.freq_input.SetValue(val)
             self.gen.set_frequency(val)
+            self._sync_preset_selection(val)
             self.SetStatusText(f"Frequency {val} Hz")
         dlg.Destroy()
 
@@ -506,6 +527,8 @@ class MainFrame(wx.Frame):
         # hears what the output device is playing, so silence finds nothing,
         # and the tone already running is what gets measured.
         source = self._describe_device(self.listen_device, self.listen_devices)
+        device = self.listen_device
+        is_loopback = self._measuring_output
         seconds = DEFAULT_CAPTURE_SECONDS
         self._set_listening(True)
         if self._measuring_output:
@@ -516,31 +539,37 @@ class MainFrame(wx.Frame):
             self.SetStatusText(
                 f"Listening to {source} for {seconds:.0f} seconds..."
             )
-        threading.Thread(target=self._listen_worker, daemon=True).start()
+        threading.Thread(
+            target=self._listen_worker,
+            args=(device, source, is_loopback),
+            daemon=True,
+        ).start()
 
     def _set_listening(self, listening: bool):
         self._listening = listening
         self.find_btn.Enable(not listening)
         if self._find_item is not None:
             self._find_item.Enable(not listening)
+        if self._play_item is not None:
+            self._play_item.Enable(not listening)
+        self.play_btn.Enable(not listening)
 
-    def _listen_worker(self):
+    def _listen_worker(self, device, source: str, is_loopback: bool):
         """Capture and analyse off the GUI thread, then hand the result back."""
         result = None
         error = None
         try:
-            samples, rate = record_mono(device=self.listen_device)
+            samples, rate = record_mono(device=device)
             result = detect_loudest_frequency(samples, rate)
         except Exception as exc:  # device missing, device busy, driver error
             error = exc
         if not self._closing:
-            wx.CallAfter(self._finish_listening, result, error)
+            wx.CallAfter(self._finish_listening, result, error, source, is_loopback)
 
-    def _finish_listening(self, result, error):
+    def _finish_listening(self, result, error, source: str, is_loopback: bool):
         if self._closing:
             return
         self._set_listening(False)
-        source = self._describe_device(self.listen_device, self.listen_devices)
 
         if error is not None:
             self.SetStatusText("Listening failed")
@@ -557,7 +586,7 @@ class MainFrame(wx.Frame):
 
         if result is None:
             self.SetStatusText("No frequency found")
-            if self._measuring_output:
+            if is_loopback:
                 detail = (
                     f"Nothing was audible on {source}. A loopback only hears "
                     "what that output device is playing, so start the tone with "
@@ -579,10 +608,11 @@ class MainFrame(wx.Frame):
         hertz = int(round(result))
         self.freq_input.SetValue(hertz)
         self.gen.set_frequency(hertz)
+        self._sync_preset_selection(hertz)
         self.freq_input.SetFocus()
         self.SetStatusText(f"Loudest frequency: {hertz} Hz")
         note = ""
-        if self._measuring_output:
+        if is_loopback:
             note = (
                 "This is the signal Windows sent to that output device, not a "
                 "microphone recording, so it shows what system effects and "
@@ -603,6 +633,8 @@ class MainFrame(wx.Frame):
         )
 
     def _on_menu_listen_device(self, event):
+        if event.GetId() not in self._listen_ids:
+            return
         device = self._listen_ids.get(event.GetId())
         self.listen_device = device
         self.listen_label = self._label_for(device, self.listen_devices)
@@ -612,6 +644,8 @@ class MainFrame(wx.Frame):
         )
 
     def _on_menu_output_device(self, event):
+        if event.GetId() not in self._output_ids:
+            return
         device = self._output_ids.get(event.GetId())
         was_playing = self.gen.is_playing
         self.output_device = device
@@ -619,15 +653,21 @@ class MainFrame(wx.Frame):
         self.gen.set_output_device(device)
         self._save_prefs()
         description = self._describe_device(device, self.playback_devices)
-        if was_playing and self._start_playback():
-            self.SetStatusText(f"Output device: {description}. Playing.")
+        if was_playing:
+            if self._start_playback():
+                self.SetStatusText(f"Output device: {description}. Playing.")
+            else:
+                self.play_btn.SetLabel("&Play")
+                self.SetStatusText(f"Output device: {description}. Stopped.")
         else:
+            self.play_btn.SetLabel("&Play")
             self.SetStatusText(f"Output device: {description}")
 
     def _start_playback(self) -> bool:
         try:
             self.gen.start()
         except Exception as exc:
+            self.play_btn.SetLabel("&Play")
             wx.MessageBox(
                 f"Could not start audio stream:\n{exc}",
                 "Audio error",
@@ -659,15 +699,23 @@ class MainFrame(wx.Frame):
         self.SetStatusText(f"Preset: {name}")
 
     def _on_toggle_play(self, _event):
+        if self._listening and not self._measuring_output:
+            return
         if self.gen.is_playing:
             self.gen.stop()
             self.play_btn.SetLabel("&Play")
             self.SetStatusText("Stopped")
-        elif self._start_playback():
-            self.SetStatusText(
-                f"Playing {self.gen.frequency:.0f} Hz "
-                f"{self.gen.waveform} on {self.gen.channel}"
-            )
+        else:
+            try:
+                val = float(self.freq_input.GetValue())
+                self.gen.set_frequency(val)
+            except (ValueError, TypeError):
+                pass
+            if self._start_playback():
+                self.SetStatusText(
+                    f"Playing {self.gen.frequency:.0f} Hz "
+                    f"{self.gen.waveform} on {self.gen.channel}"
+                )
 
     def _on_volume(self, _event):
         vp = self.vol_slider.GetValue()

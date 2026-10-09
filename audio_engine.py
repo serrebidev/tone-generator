@@ -10,6 +10,8 @@ measures the signal Windows sends to an output device, so it needs no
 microphone while something is playing.
 """
 
+import math
+import sys
 import threading
 
 import numpy as np
@@ -64,7 +66,7 @@ def list_loopback_devices() -> list[tuple[int, str]]:
     says nothing about the acoustic output of the speaker itself.
     """
     _LOOPBACK_SPEAKERS.clear()
-    if _soundcard is None:
+    if _soundcard is None or sys.platform == "darwin":
         return []
     try:
         speakers = _soundcard.all_speakers()
@@ -80,7 +82,9 @@ def list_loopback_devices() -> list[tuple[int, str]]:
 
 def is_loopback_device(device) -> bool:
     """True when `device` is one of the synthetic loopback indices."""
-    return isinstance(device, int) and device <= LOOPBACK_INDEX_BASE
+    if isinstance(device, bool) or not isinstance(device, (int, np.integer)):
+        return False
+    return int(device) <= LOOPBACK_INDEX_BASE
 
 
 def _list_devices(channel_key: str) -> list[tuple[int, str]]:
@@ -138,12 +142,16 @@ def detect_loudest_frequency(
     necessarily the musical fundamental. Returns None when no usable signal
     is present or the requested band holds no analysable bin.
     """
-    x = np.asarray(samples, dtype=np.float64).ravel()
+    x = np.asarray(samples, dtype=np.float64)
     if x.size == 0 or sample_rate <= 0 or frame_size < 4:
         return None
-    x = x - x.mean()
+    if x.ndim > 1:
+        x = x.mean(axis=1 if x.shape[0] >= x.shape[1] else 0)
+    else:
+        x = x.ravel()
     if not np.all(np.isfinite(x)):
         return None
+    x = x - x.mean()
     if float(np.max(np.abs(x))) > MAX_SANE_PEAK:
         return None
     if float(np.sqrt(np.mean(x**2))) < SILENCE_RMS:
@@ -199,12 +207,24 @@ def record_mono(seconds: float = DEFAULT_CAPTURE_SECONDS, sample_rate=None, devi
     if sample_rate is None:
         sample_rate = _input_samplerate(device)
     sample_rate = int(round(float(sample_rate)))
+    if sample_rate <= 0:
+        sample_rate = 44100
     frames = max(1, int(round(seconds * sample_rate)))
-    data = sd.rec(
-        frames, samplerate=sample_rate, channels=1, dtype="float32", device=device
-    )
-    sd.wait()
-    return data[:, 0], sample_rate
+    try:
+        data = sd.rec(
+            frames, samplerate=sample_rate, channels=1, dtype="float32", device=device
+        )
+        sd.wait()
+        return data[:, 0], sample_rate
+    except Exception:
+        # Some devices reject 1-channel capture and require stereo; record
+        # stereo and average channels down to mono.
+        data = sd.rec(
+            frames, samplerate=sample_rate, channels=2, dtype="float32", device=device
+        )
+        sd.wait()
+        samples = np.asarray(data, dtype=np.float64).mean(axis=1)
+        return samples, sample_rate
 
 
 def _record_loopback(seconds: float, device: int):
@@ -246,7 +266,7 @@ def _loopback_rate(speaker_name: str) -> int:
             info = sd.query_devices(index)
             return int(round(float(info["default_samplerate"])))
         except Exception:
-            break
+            continue
     return LOOPBACK_FALLBACK_RATE
 
 
@@ -309,9 +329,9 @@ class ToneGenerator:
         if waveform == "Sine":
             wave = np.sin(theta)
         elif waveform == "Square":
-            wave = np.sign(np.sin(theta))
+            wave = np.where(np.sin(theta) >= 0.0, 1.0, -1.0)
         elif waveform == "Triangle":
-            wave = (2 / np.pi) * np.arcsin(np.sin(theta))
+            wave = (2 / np.pi) * np.arcsin(np.clip(np.sin(theta), -1.0, 1.0))
         else:  # Sawtooth
             wave = 2 * ((cycles + 0.5) % 1.0) - 1
 
@@ -336,8 +356,11 @@ class ToneGenerator:
         # A chosen device may not run at the default rate, so follow whatever
         # rate it reports before building the stream.
         if self.output_device is not None:
-            info = sd.query_devices(self.output_device)
-            self.sample_rate = int(round(float(info["default_samplerate"])))
+            try:
+                info = sd.query_devices(self.output_device)
+                self.sample_rate = int(round(float(info["default_samplerate"])))
+            except Exception:
+                pass
         else:
             # Back on the default output after a chosen device: drop that
             # device's rate, which the default may not accept.
@@ -346,7 +369,7 @@ class ToneGenerator:
                 self.sample_rate = int(round(float(info["default_samplerate"])))
             except Exception:
                 pass
-        self.stream = sd.OutputStream(
+        stream = sd.OutputStream(
             samplerate=self.sample_rate,
             channels=2,
             device=self.output_device,
@@ -354,7 +377,15 @@ class ToneGenerator:
             callback=self._callback,
             blocksize=512,
         )
-        self.stream.start()
+        try:
+            stream.start()
+        except Exception:
+            try:
+                stream.close()
+            except Exception:
+                pass
+            raise
+        self.stream = stream
 
     def set_output_device(self, device):
         """Play through `device`, or the system default when None."""
@@ -364,21 +395,32 @@ class ToneGenerator:
 
     def stop(self):
         if self.stream is not None:
+            stream = self.stream
+            self.stream = None
             try:
-                self.stream.stop()
-                self.stream.close()
+                try:
+                    stream.stop()
+                except Exception:
+                    pass
+                try:
+                    stream.close()
+                except Exception:
+                    pass
             finally:
-                self.stream = None
                 with self._lock:
                     self._phase = 0.0
 
     def set_frequency(self, hz: float) -> float:
+        if math.isnan(float(hz)):
+            hz = self.FREQ_MIN
         clamped = max(self.FREQ_MIN, min(self.FREQ_MAX, float(hz)))
         with self._lock:
             self.frequency = clamped
         return clamped
 
     def set_volume(self, vol: float) -> float:
+        if math.isnan(float(vol)):
+            vol = self.VOL_MIN
         clamped = max(self.VOL_MIN, min(self.VOL_MAX, float(vol)))
         with self._lock:
             self.volume = clamped

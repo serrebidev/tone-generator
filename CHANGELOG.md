@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.8 - 2026-10-09
+
+- Fix stereo capture frequency detection in `detect_loudest_frequency` (avoid halving measured frequencies from interleaved channels).
+- Fix menu mnemonic conflict for the Frequency menu (`Alt+R` / `F&requency`) with File (`Alt+F`).
+- Fix frequency input manual typing desynchronization by handling text change events and syncing before playback.
+- Synchronize preset frequency dropdown selection dynamically when stepping or typing frequency, allowing re-selection of the same preset.
+- Fix Play/Stop toggle button label desynchronization if playback cannot start on an output device change.
+- Eliminate zero-crossing glitch in Square waveform and prevent NaN in Triangle waveform.
+- Fix audio stream handle leaks on stream start failures and guarantee cleanup on stream stop.
+- Support 2-channel fallback in mono capture for devices that reject 1-channel recording.
+- Eliminate wxWidgets static box sizer parenting assertion warnings.
+
 ## 1.0.6 - 2026-09-28
 
 - Dependency refresh: wxPython 4.3.1, NumPy 2.5.3, sounddevice 0.5.6, soundcard 0.4.6, PyInstaller 6.22.3.

@@ -22,6 +22,14 @@ class DetectLoudestFrequencyTests(unittest.TestCase):
             audio_engine.detect_loudest_frequency(samples, rate), 1000.0, delta=11.0
         )
 
+    def test_detects_a_pure_tone_in_stereo(self):
+        rate = 44100
+        mono = tone(1000.0, rate)
+        stereo = np.column_stack([mono, mono])
+        self.assertAlmostEqual(
+            audio_engine.detect_loudest_frequency(stereo, rate), 1000.0, delta=1.0
+        )
+
     def test_interpolates_between_fft_bins(self):
         rate = 44100
         samples = tone(1000.0, rate)
@@ -145,6 +153,30 @@ class RecordMonoTests(unittest.TestCase):
         self.assertEqual(captured["device"], 7)
         self.assertEqual(captured["samplerate"], 48000)
         self.assertEqual(captured["frames"], 24000)
+
+    def test_falls_back_to_stereo_if_mono_capture_fails(self):
+        calls = []
+
+        def fake_rec(frames, samplerate, channels, dtype, device):
+            calls.append(channels)
+            if channels == 1:
+                raise RuntimeError("Invalid number of channels")
+            return np.ones((frames, 2), dtype=dtype) * 0.5
+
+        with (
+            mock.patch.object(
+                audio_engine.sd,
+                "query_devices",
+                return_value={"default_samplerate": 48000.0},
+            ),
+            mock.patch.object(audio_engine.sd, "rec", side_effect=fake_rec),
+            mock.patch.object(audio_engine.sd, "wait"),
+        ):
+            samples, rate = audio_engine.record_mono(seconds=0.1)
+
+        self.assertEqual(calls, [1, 2])
+        self.assertEqual(rate, 48000)
+        self.assertAlmostEqual(float(samples[0]), 0.5, places=5)
 
 
 class DeviceListingTests(unittest.TestCase):
@@ -333,8 +365,13 @@ class LoopbackTests(unittest.TestCase):
         self.assertFalse(audio_engine.is_loopback_device(None))
         self.assertFalse(audio_engine.is_loopback_device(0))
         self.assertFalse(audio_engine.is_loopback_device(7))
+        self.assertFalse(audio_engine.is_loopback_device(True))
+        self.assertFalse(audio_engine.is_loopback_device(False))
         self.assertTrue(
             audio_engine.is_loopback_device(audio_engine.LOOPBACK_INDEX_BASE)
+        )
+        self.assertTrue(
+            audio_engine.is_loopback_device(np.int64(audio_engine.LOOPBACK_INDEX_BASE))
         )
 
     def test_no_loopback_sources_without_soundcard(self):
@@ -381,6 +418,52 @@ class LoopbackTests(unittest.TestCase):
                 audio_engine.record_mono(seconds=0.5, device=-1000)
 
         self.assertIn("not available", str(caught.exception))
+
+
+class ToneGeneratorTests(unittest.TestCase):
+    def test_square_wave_has_no_zero_glitch(self):
+        gen = audio_engine.ToneGenerator(sample_rate=44100)
+        gen.set_waveform("Square")
+        out = np.zeros((512, 2), dtype=np.float32)
+        for _ in range(10):
+            gen._callback(out, 512, None, None)
+            self.assertFalse((out[:, 0] == 0.0).any())
+
+    def test_triangle_wave_has_no_nans(self):
+        gen = audio_engine.ToneGenerator(sample_rate=44100)
+        gen.set_waveform("Triangle")
+        out = np.zeros((512, 2), dtype=np.float32)
+        for _ in range(10):
+            gen._callback(out, 512, None, None)
+            self.assertFalse(np.isnan(out).any())
+
+    def test_start_cleans_up_stream_if_start_raises(self):
+        gen = audio_engine.ToneGenerator(sample_rate=44100)
+        fake_stream = mock.MagicMock()
+        fake_stream.start.side_effect = RuntimeError("Failed to start")
+
+        with mock.patch.object(audio_engine.sd, "OutputStream", return_value=fake_stream):
+            with self.assertRaises(RuntimeError):
+                gen.start()
+
+        fake_stream.close.assert_called_once()
+        self.assertIsNone(gen.stream)
+
+    def test_stop_closes_stream_even_if_stop_raises(self):
+        gen = audio_engine.ToneGenerator(sample_rate=44100)
+        fake_stream = mock.MagicMock()
+        fake_stream.stop.side_effect = RuntimeError("Failed to stop")
+        gen.stream = fake_stream
+
+        gen.stop()
+
+        fake_stream.close.assert_called_once()
+        self.assertIsNone(gen.stream)
+
+    def test_nan_frequency_and_volume_are_clamped_safely(self):
+        gen = audio_engine.ToneGenerator()
+        self.assertEqual(gen.set_frequency(float("nan")), gen.FREQ_MIN)
+        self.assertEqual(gen.set_volume(float("nan")), gen.VOL_MIN)
 
 
 if __name__ == "__main__":

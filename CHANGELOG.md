@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.9 - 2026-11-09
+
+- Releases and downloads move from GitHub to Forgejo (`https://git.serrebiradio.com/serrebi/tone-generator/releases`) while GitHub is suspended. Same SHA-256 checksums published beside every asset.
+- macOS assets are skipped until GitHub Actions is available again.
+
 ## 1.0.8 - 2026-10-09
 
 - Fix stereo capture frequency detection in `detect_loudest_frequency` (avoid halving measured frequencies from interleaved channels).

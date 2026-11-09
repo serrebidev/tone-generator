@@ -10,14 +10,14 @@ build.bat dry-run
 build.bat release
 ```
 
-macOS and Linux: `./build.sh` (see AGENTS.md). Cloud agents release every platform with `.github/workflows/cloud-release.yml`.
+macOS and Linux: `./build.sh` (see AGENTS.md). The `.github/workflows` releases cannot run while GitHub Actions is suspended.
 
 ## Release Rules
 
 - Release from `main`.
-- Use `build.bat release` for official releases.
-- GitHub releases must be published, never drafts.
-- The release script explicitly marks the new release as latest and non-draft.
+- Use `build.bat release` for official releases (needs `FORGEJO_TOKEN` set).
+- Forgejo releases must be published, never drafts.
+- The release script publishes the new release as non-draft via `tools/forgejo_release.py`.
 - The release script removes any remaining draft releases after publishing.
 - Do not ship if the build shows unresolved warnings, errors, or dependency mismatches.
 
@@ -25,4 +25,4 @@ macOS and Linux: `./build.sh` (see AGENTS.md). Cloud agents release every platfo
 
 Build mode produces `dist\ToneGenerator.exe`.
 
-Release mode updates version metadata, builds the executable, stages versioned EXE/ZIP assets plus SHA-256 sums under `dist\release`, commits the version bump, tags and pushes Git, and publishes the GitHub release.
+Release mode updates version metadata, builds the executable, stages versioned EXE/ZIP assets plus SHA-256 sums under `dist\release`, commits the version bump, pushes to the `forgejo` remote, tags and pushes the tag, and publishes the Forgejo release.

@@ -10,7 +10,7 @@ set -euo pipefail
 
 tag="$1"
 work="$(mktemp -d /tmp/tonegen-linux-XXXXXX)"
-GIT_LFS_SKIP_SMUDGE=1 git clone --quiet --depth 1 --branch "$tag" https://github.com/serrebidev/tone-generator.git "$work/src" >&2
+GIT_LFS_SKIP_SMUDGE=1 git clone --quiet --depth 1 --branch "$tag" https://git.serrebiradio.com/serrebi/tone-generator.git "$work/src" >&2
 
 # wxPython has no Linux pip wheel; use Ubuntu's in a venv that sees it.
 docker run --rm -v "$work/src:/src" -w /src ubuntu:24.04 bash -c '

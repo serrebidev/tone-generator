@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 set "APP_NAME=ToneGenerator"
 set "EXE_NAME=ToneGenerator.exe"
-set "GITHUB_REPO_SLUG=serrebidev/tone-generator"
+set "FORGEJO_REPO=serrebi/tone-generator"
 set "PYTHON_CMD=py -3.14"
 set "MODE=%~1"
 if "%MODE%"=="" set "MODE=build"
@@ -34,13 +34,13 @@ if /I "%MODE%"=="build" (
 )
 
 where git >nul 2>&1 || (echo [release] Git not found in PATH.& goto :error)
-where gh >nul 2>&1 || (echo [release] GitHub CLI ^(gh^) not found in PATH.& goto :error)
-git fetch --tags >nul 2>&1
+if "%FORGEJO_TOKEN%"=="" (echo [release] FORGEJO_TOKEN is not set.& goto :error)
+git fetch forgejo --tags >nul 2>&1
 call :compute_next_version || goto :error
 
 if /I "%MODE%"=="dry-run" (
     echo [dry-run] Next version: v%NEXT_VERSION%
-    echo [dry-run] Would update version files, build, package, commit, tag, push, publish the GitHub release as Latest, and delete draft releases.
+    echo [dry-run] Would update version files, build, package, commit, tag, push, publish the Forgejo release, and delete draft releases.
     popd
     exit /b 0
 )
@@ -120,36 +120,25 @@ exit /b 0
 :commit_tag_push
 git add tone_generator.py version_info.txt
 git commit -m "chore(release): v%NEXT_VERSION%" || exit /b 1
+git push forgejo HEAD || exit /b 1
 git tag "v%NEXT_VERSION%" || exit /b 1
-git push origin HEAD || exit /b 1
-git push origin "v%NEXT_VERSION%" || exit /b 1
+git push forgejo "v%NEXT_VERSION%" || exit /b 1
 exit /b 0
 
 :publish_release
-echo [release] Creating GitHub release v%NEXT_VERSION%...
-gh release create "v%NEXT_VERSION%" ^
-    "%RELEASE_DIR%\%APP_NAME%-v%NEXT_VERSION%.exe" ^
-    "%RELEASE_DIR%\%APP_NAME%-v%NEXT_VERSION%.zip" ^
-    "%SUMS_PATH%" ^
-    --repo "%GITHUB_REPO_SLUG%" ^
+echo [release] Creating Forgejo release v%NEXT_VERSION%...
+call %PYTHON_CMD% tools\forgejo_release.py create "v%NEXT_VERSION%" ^
     --title "Tone Generator %NEXT_VERSION%" ^
     --notes-file "%NOTES_PATH%" ^
-    --latest
-if errorlevel 1 exit /b 1
-gh release edit "v%NEXT_VERSION%" --repo "%GITHUB_REPO_SLUG%" --draft=false --latest
-if errorlevel 1 (
-    echo [release] Failed to publish v%NEXT_VERSION% as Latest.
-    exit /b 1
-)
-rem Confirm it really is published before deleting anything: a release that is
-rem still seen as a draft would otherwise be destroyed by the cleanup below.
-powershell -NoProfile -Command "$state = gh release view 'v%NEXT_VERSION%' --repo '%GITHUB_REPO_SLUG%' --json isDraft,url | ConvertFrom-Json; if ($state.isDraft) { Write-Host ('[release] v%NEXT_VERSION% is still a draft at ' + $state.url); exit 1 }; Write-Host ('[release] v%NEXT_VERSION% is published: ' + $state.url)"
+    --asset "%RELEASE_DIR%\%APP_NAME%-v%NEXT_VERSION%.exe" ^
+    --asset "%RELEASE_DIR%\%APP_NAME%-v%NEXT_VERSION%.zip" ^
+    --asset "%SUMS_PATH%"
 if errorlevel 1 (
     echo [release] v%NEXT_VERSION% is not published. Stopping before draft cleanup.
     exit /b 1
 )
 call :delete_draft_releases || exit /b 1
-rem macOS on a GitHub runner, Linux over SSH (no-op on GitHub Actions).
+rem Linux over SSH; macOS is skipped while GitHub Actions is suspended.
 call %PYTHON_CMD% tools\release_other_platforms.py "v%NEXT_VERSION%"
 if errorlevel 1 (
     echo [release] Linux/macOS assets failed. Rerun: python tools\release_other_platforms.py v%NEXT_VERSION%
@@ -158,9 +147,9 @@ if errorlevel 1 (
 exit /b 0
 
 :delete_draft_releases
-echo [release] Checking for draft releases in %GITHUB_REPO_SLUG%...
+echo [release] Checking for draft releases in %FORGEJO_REPO%...
 rem Never touch the release just published, so it cannot delete its own work.
-powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $repo='%GITHUB_REPO_SLUG%'; $keep='v%NEXT_VERSION%'; $drafts = gh release list --repo $repo --limit 100 --json tagName,isDraft | ConvertFrom-Json | Where-Object { $_.isDraft -eq $true -and $_.tagName -ne $keep }; foreach ($draft in $drafts) { Write-Host ('Deleting draft release ' + $draft.tagName + '...'); gh release delete $draft.tagName --repo $repo --yes }"
+call %PYTHON_CMD% tools\forgejo_release.py delete-drafts --keep "v%NEXT_VERSION%"
 if errorlevel 1 (
     echo [release] Failed to remove draft releases.
     exit /b 1

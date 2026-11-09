@@ -34,7 +34,7 @@ Choices are remembered by name, so they survive Windows renumbering devices as h
 
 ## Download
 
-For normal use, download `ToneGenerator.exe` from the latest GitHub release and run it directly on Windows.
+For normal use, download `ToneGenerator.exe` from the [latest Forgejo release](https://git.serrebiradio.com/serrebi/tone-generator/releases) and run it directly on Windows. Each release publishes SHA-256 checksums beside the downloads; verify them before running.
 
 ## Run From Source
 
@@ -53,7 +53,7 @@ The build output is `dist\ToneGenerator.exe`. The PyInstaller spec bundles wxPyt
 
 ## Release
 
-Use `build.bat release` for official releases. It publishes the GitHub release as latest/non-draft and removes any remaining draft releases.
+Use `build.bat release` for official releases (needs `FORGEJO_TOKEN` set). It publishes the Forgejo release as non-draft and removes any remaining draft releases.
 
 ##Submit bugs in issues, or join my Telegram group!
 (https://t.me/SerrebiProjects)

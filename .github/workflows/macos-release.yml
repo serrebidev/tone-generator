@@ -19,7 +19,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      GH_TOKEN: ${{ github.token }}
+      FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
       TAG: ${{ inputs.release_tag }}
     steps:
       - uses: actions/checkout@v7
@@ -36,4 +36,4 @@ jobs:
       - name: Attach to release
         run: |
           cp "dist/ToneGenerator-macos.zip" "ToneGenerator-$TAG-macos.zip"
-          gh release upload "$TAG" "ToneGenerator-$TAG-macos.zip" --clobber --repo "$GITHUB_REPOSITORY"
+          python3 tools/forgejo_release.py upload "$TAG" "ToneGenerator-$TAG-macos.zip"

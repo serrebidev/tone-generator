@@ -24,9 +24,6 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-env:
-  GH_TOKEN: ${{ github.token }}
-
 jobs:
   windows:
     runs-on: windows-latest
@@ -140,10 +137,13 @@ jobs:
 
       - name: Attach to release
         if: ${{ !inputs.dry_run }}
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
         run: |
           tag="${{ needs.windows.outputs.tag }}"
           v="${tag#v}"
           ext="${{ matrix.asset }}"; ext="${ext#ToneGenerator-}"
           name="ToneGenerator-v$v-$ext"
           cp "dist/${{ matrix.asset }}" "$name"
-          gh release upload "$tag" "$name" --clobber --repo "$GITHUB_REPOSITORY"
+          PY="${PYTHON:-python3}"
+          "$PY" tools/forgejo_release.py upload "$tag" "$name"

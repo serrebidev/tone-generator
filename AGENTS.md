@@ -20,9 +20,9 @@ Tone Generator is an accessible wxPython Windows desktop app for generating audi
 - The release script publishes the new release as non-draft via `tools/forgejo_release.py`.
 - The release script removes any remaining draft releases after publishing.
 - Pushes go to the `forgejo` remote (`https://git.serrebiradio.com/serrebi/tone-generator.git`); main is pushed before the tag is created. Never force-push.
-- Local releases (this Windows host): `build.bat release` builds Windows locally, then `tools/release_other_platforms.py` builds Linux over `ssh root@serrebiradio.com` with `tools/build_linux_remote.sh` (throwaway ubuntu:24.04 container, launch check; `LINUX_BUILD_HOST` overrides) and uploads it to the Forgejo release. If that half fails after publishing, rerun `python tools/release_other_platforms.py vX.Y.Z`.
+- Local releases (this Windows host): `build.bat release` builds Windows locally, then `tools/release_other_platforms.py` builds Linux over `ssh wsl-build` (local WSL Ubuntu, Docker) with `tools/build_linux_remote.sh` (throwaway ubuntu:24.04 container, launch check; `LINUX_BUILD_HOST` overrides) and uploads it to the Forgejo release. If that half fails after publishing, rerun `python tools/release_other_platforms.py vX.Y.Z`.
 - macOS is skipped while GitHub Actions is suspended: `.github/workflows/macos-release.yml` and `.github/workflows/cloud-release.yml` cannot run.
-- `build.sh` = macOS/Linux build. Linux needs distro wxPython (`python3-wxgtk4.0`) in a `--system-site-packages` venv, plus `libportaudio2`. Test Linux on `ssh root@serrebiradio.com` (Debian 13).
+- `build.sh` = macOS/Linux build. Linux needs distro wxPython (`python3-wxgtk4.0`) in a `--system-site-packages` venv, plus `libportaudio2`. Test Linux on `ssh wsl-build` (local WSL Ubuntu).
 
 ## Build Hygiene
 

@@ -1,21 +1,27 @@
 #!/bin/bash
-# Build the Linux release for one tag on the Linux release host, the way
+# Build the Linux release for one tag on the Linux release host (local WSL Ubuntu, ssh alias wsl-build), the way
 # cloud-release.yml's ubuntu-24.04 job does, in a throwaway ubuntu:24.04
 # container. tools/release_other_platforms.py pipes this over SSH:
 #
-#   ssh root@serrebiradio.com bash -s -- vX.Y.Z < tools/build_linux_remote.sh
+#   ssh wsl-build bash -s -- vX.Y.Z < tools/build_linux_remote.sh
 #
 # The last line of output is the release asset's path on the host.
 set -euo pipefail
+
+# Host caches mounted into the container: apt .debs per repo (apt locks its
+# archive dir), pip wheels shared (pip keeps wheels it builds from source).
+# --cpu-shares 26214: build outranks everything except live radio/TV on the host
+# (see /usr/local/bin/live-priority.sh there).
 
 tag="$1"
 work="$(mktemp -d /tmp/tonegen-linux-XXXXXX)"
 GIT_LFS_SKIP_SMUDGE=1 git clone --quiet --depth 1 --branch "$tag" https://git.serrebiradio.com/serrebi/tone-generator.git "$work/src" >&2
 
 # wxPython has no Linux pip wheel; use Ubuntu's in a venv that sees it.
-docker run --rm -v "$work/src:/src" -w /src ubuntu:24.04 bash -c '
+docker run --rm --cpu-shares 26214 -v /var/cache/release-build/tonegen-apt:/var/cache/apt/archives -v /var/cache/release-build/pip:/root/.cache/pip -v "$work/src:/src" -w /src ubuntu:24.04 bash -c '
   set -e
   export DEBIAN_FRONTEND=noninteractive
+  rm -f /etc/apt/apt.conf.d/docker-clean  # keep .debs in the mounted host cache
   apt-get update -qq
   apt-get install -y -qq --no-install-recommends python3-venv python3-pip python3-wxgtk4.0 libpython3.12 git binutils xvfb xauth libportaudio2 libpulse0 >/dev/null
   python3 -m venv --system-site-packages /venv

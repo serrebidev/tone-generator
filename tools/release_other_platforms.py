@@ -12,7 +12,7 @@ import posixpath
 import subprocess
 import sys
 
-HOST = os.environ.get("LINUX_BUILD_HOST", "root@serrebiradio.com")
+HOST = os.environ.get("LINUX_BUILD_HOST", "wsl-build")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

@@ -756,7 +756,11 @@ class MainFrame(wx.Frame):
         wx.MessageBox(
             f"Tone Generator {APP_VERSION}\n\n"
             "Accessible audio test-tone generator.\n"
-            "Built with wxPython, NumPy, and sounddevice.",
+            "Built with wxPython, NumPy, and sounddevice.\n\n"
+            "Author: serrebidev. GitHub: https://github.com/serrebidev/tone-generator. "
+            "Forgejo: https://git.serrebiradio.com/serrebi/tone-generator. "
+            "Projects: https://projects.serrebiradio.com. "
+            "Telegram: https://t.me/SerrebiProjects. Full credits: CREDITS.md.",
             "About Tone Generator",
             wx.OK | wx.ICON_INFORMATION,
         )

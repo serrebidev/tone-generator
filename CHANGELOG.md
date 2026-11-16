@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.11 - 2026-11-16
+
+- Help > About now shows each link (GitHub, Forgejo, projects site, Telegram, full credits) as its own control: Tab reaches it and Enter or Space opens it.
+
 ## 1.0.10 - 2026-11-16
 
 - Help > About now lists the author, the GitHub and Forgejo pages, the projects site and the Telegram channel, and points to CREDITS.md for full credits.

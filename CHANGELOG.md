@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.10 - 2026-11-16
+
+- Help > About now lists the author, the GitHub and Forgejo pages, the projects site and the Telegram channel, and points to CREDITS.md for full credits.
+- The README follows the shared layout and credits the libraries Tone Generator uses.
+- Linux builds now run in a local WSL container with cached packages.
+
 ## 1.0.9 - 2026-11-09
 
 - Releases and downloads move from GitHub to Forgejo (`https://git.serrebiradio.com/serrebi/tone-generator/releases`) while GitHub is suspended. Same SHA-256 checksums published beside every asset.

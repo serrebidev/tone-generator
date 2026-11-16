@@ -2,7 +2,11 @@
 
 Accessible Windows desktop test-tone generator built with wxPython, NumPy, and sounddevice.
 
+[![Join SerrebiProjects on Telegram](https://img.shields.io/badge/Telegram-SerrebiProjects-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/SerrebiProjects)
+
 **Questions, bugs, or release news?** Join the [SerrebiProjects Telegram group](https://t.me/SerrebiProjects), the fastest place to get help.
+
+More serrebi projects: [projects.serrebiradio.com](https://projects.serrebiradio.com)
 
 ## Features
 
@@ -57,3 +61,7 @@ Use `build.bat release` for official releases (needs `FORGEJO_TOKEN` set). It pu
 
 ##Submit bugs in issues, or join my Telegram group!
 (https://t.me/SerrebiProjects)
+
+## Credits
+
+See [CREDITS.md](CREDITS.md) for where the ideas behind this project came from, and the third-party projects it builds on.

@@ -29,6 +29,7 @@ import threading
 
 import wx
 
+from about_dialog import serrebi_links, show_about
 from audio_engine import (
     DEFAULT_CAPTURE_SECONDS,
     ToneGenerator,
@@ -753,16 +754,14 @@ class MainFrame(wx.Frame):
         wx.MessageBox(msg, "Keyboard shortcuts", wx.OK | wx.ICON_INFORMATION)
 
     def _on_about(self, _event):
-        wx.MessageBox(
-            f"Tone Generator {APP_VERSION}\n\n"
+        show_about(
+            self,
+            "About Tone Generator",
+            f"Tone Generator {APP_VERSION}",
             "Accessible audio test-tone generator.\n"
             "Built with wxPython, NumPy, and sounddevice.\n\n"
-            "Author: serrebidev. GitHub: https://github.com/serrebidev/tone-generator. "
-            "Forgejo: https://git.serrebiradio.com/serrebi/tone-generator. "
-            "Projects: https://projects.serrebiradio.com. "
-            "Telegram: https://t.me/SerrebiProjects. Full credits: CREDITS.md.",
-            "About Tone Generator",
-            wx.OK | wx.ICON_INFORMATION,
+            "Author: serrebidev.",
+            serrebi_links("serrebidev/tone-generator", "serrebi/tone-generator"),
         )
 
     def _on_close(self, event):

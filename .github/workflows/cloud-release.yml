@@ -1,6 +1,6 @@
 name: Cloud Release
 
-# Muse agent and cloud agents ONLY. On the Windows release host run `build.bat release`.
+# Every public release runs here, on GitHub runners.
 # Windows runs the same build.bat on a GitHub runner (version, notes, commit,
 # tag and release are exactly what the local release makes); macOS and Linux
 # then build that tag with build.sh and attach their packages.
@@ -57,9 +57,16 @@ jobs:
           python -m pip install -r requirements-build.txt pytest
           python -m pytest -q test_audio_engine.py
 
+      - name: Add the Forgejo remote
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: git remote add forgejo "https://x-access-token:$env:FORGEJO_TOKEN@git.serrebiradio.com/serrebi/tone-generator.git"
+
       - name: Dry run
         if: ${{ inputs.dry_run }}
         shell: cmd
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
         run: |
           call build.bat dry-run || exit /b 1
           call build.bat build
@@ -67,7 +74,19 @@ jobs:
       - name: Release
         if: ${{ !inputs.dry_run }}
         shell: cmd
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
         run: call build.bat release
+
+      - name: Push the release commit and tag to GitHub
+        if: ${{ !inputs.dry_run }}
+        run: |
+          $tag = git describe --tags --exact-match HEAD
+          if ($LASTEXITCODE -ne 0) { throw "No release tag on HEAD" }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw "git push main failed" }
+          git push origin $tag
+          if ($LASTEXITCODE -ne 0) { throw "git push $tag failed" }
 
       - name: Record tag
         id: tag

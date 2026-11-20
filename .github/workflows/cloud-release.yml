@@ -113,7 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-26
+          - os: xcode-27
             asset: ToneGenerator-macos.zip
           - os: ubuntu-24.04
             asset: ToneGenerator-linux-x86_64.tar.gz

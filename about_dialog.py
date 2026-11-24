@@ -5,7 +5,7 @@
 ``links`` is a list of ``(label, url)``. Each becomes a HyperlinkCtrl that Tab
 reaches and Enter, Space or a click opens in the default browser.
 
-    report_issue(parent, github_repo, app_line, tr)
+    report_issue(parent, github_repo, app_line, _)
 
 Help > Report an issue: asks a title and a description, then opens GitHub's
 new-issue page with both filled in and ``app_line`` plus the system added.
@@ -106,14 +106,14 @@ def issue_url(github_repo, title, details, app_line):
     return f"https://github.com/{github_repo}/issues/new?{query}"
 
 
-def report_issue(parent, github_repo, app_line, tr=str):
+def report_issue(parent, github_repo, app_line, _=str):
     """Ask the title and description here, where the screen reader knows the
     boxes, then open GitHub prefilled. GitHub needs the user's own account, so
-    the last step, Create, is theirs in the browser. ``tr`` translates."""
-    caption = tr("Report an issue")
+    the last step, Create, is theirs in the browser. ``_`` translates."""
+    caption = _("Report an issue")
     summary = _ask(
         parent,
-        tr("Issue title: one line saying what went wrong or what you would like"),
+        _("Issue title: one line saying what went wrong or what you would like"),
         caption,
         0,
     )
@@ -121,7 +121,7 @@ def report_issue(parent, github_repo, app_line, tr=str):
         return
     details = _ask(
         parent,
-        tr(
+        _(
             "Describe what you did, what happened, and what you expected.\n"
             "Your browser then opens GitHub with this filled in. Sign in and press Create."
         ),

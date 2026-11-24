@@ -7,6 +7,8 @@ name: Cloud Release
 #
 #   gh workflow run cloud-release.yml -f dry_run=true    # build all, publish nothing
 #   gh workflow run cloud-release.yml -f dry_run=false   # real release
+#   gh workflow run cloud-release.yml -f dry_run=false -f attach_tag=vX.Y.Z
+#       # rebuild only macOS and Linux and attach them to that existing release
 
 on:
   workflow_dispatch:
@@ -16,6 +18,11 @@ on:
         required: false
         default: true
         type: boolean
+      attach_tag:
+        description: Existing release tag; skip Windows, build and attach only macOS and Linux
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -26,6 +33,7 @@ concurrency:
 
 jobs:
   windows:
+    if: ${{ inputs.attach_tag == '' }}
     runs-on: windows-latest
     timeout-minutes: 45
     outputs:
@@ -83,10 +91,20 @@ jobs:
         run: |
           $tag = git describe --tags --exact-match HEAD
           if ($LASTEXITCODE -ne 0) { throw "No release tag on HEAD" }
+          # The Forgejo-to-GitHub sync may already have pushed this same commit
+          # and tag: that is success, only a different commit is a failure.
+          $head = git rev-parse HEAD
           git push origin HEAD:main
-          if ($LASTEXITCODE -ne 0) { throw "git push main failed" }
+          if ($LASTEXITCODE -ne 0) {
+            git fetch origin main
+            if ((git rev-parse FETCH_HEAD) -ne $head) { throw "git push main failed" }
+          }
           git push origin $tag
-          if ($LASTEXITCODE -ne 0) { throw "git push $tag failed" }
+          if ($LASTEXITCODE -ne 0) {
+            git fetch origin "refs/tags/${tag}:refs/tags/remote-$tag"
+            if ((git rev-parse "remote-$tag^{commit}") -ne $head) { throw "git push $tag failed" }
+          }
+          $global:LASTEXITCODE = 0
 
       - name: Record tag
         id: tag
@@ -109,6 +127,7 @@ jobs:
 
   unix:
     needs: windows
+    if: ${{ !cancelled() && (needs.windows.result == 'success' || inputs.attach_tag != '') }}
     strategy:
       fail-fast: false
       matrix:
@@ -122,7 +141,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.windows.outputs.ref }}
+          ref: ${{ inputs.attach_tag || needs.windows.outputs.ref }}
 
       - uses: actions/setup-python@v7
         if: ${{ runner.os == 'macOS' }}
@@ -159,7 +178,7 @@ jobs:
         env:
           FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
         run: |
-          tag="${{ needs.windows.outputs.tag }}"
+          tag="${{ inputs.attach_tag || needs.windows.outputs.tag }}"
           v="${tag#v}"
           ext="${{ matrix.asset }}"; ext="${ext#ToneGenerator-}"
           name="ToneGenerator-v$v-$ext"

@@ -29,7 +29,7 @@ import threading
 
 import wx
 
-from about_dialog import serrebi_links, show_about
+from about_dialog import report_issue, serrebi_links, show_about
 from audio_engine import (
     DEFAULT_CAPTURE_SECONDS,
     ToneGenerator,
@@ -335,6 +335,17 @@ class MainFrame(wx.Frame):
         keys_id = wx.NewIdRef()
         help_menu.Append(keys_id, "&Keyboard shortcuts\tF1")
         self.Bind(wx.EVT_MENU, self._on_show_keys, id=keys_id)
+        report_id = wx.NewIdRef()
+        help_menu.Append(
+            report_id,
+            "Report an &issue on GitHub...",
+            "Describe a problem or an idea, then send it as a GitHub issue",
+        )
+        self.Bind(
+            wx.EVT_MENU,
+            lambda _e: report_issue(self, "serrebidev/tone-generator", f"Tone Generator {APP_VERSION}"),
+            id=report_id,
+        )
         help_menu.Append(wx.ID_ABOUT, "&About")
         self.Bind(wx.EVT_MENU, self._on_about, id=wx.ID_ABOUT)
         menubar.Append(help_menu, "&Help")

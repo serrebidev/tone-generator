@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.12 - 2026-11-24
+
+- Help > Report an issue on GitHub asks for a title and a description in accessible dialogs, then opens GitHub's new issue page with both filled in and your Tone Generator version and system added. Sign in on GitHub and press Create.
+
 ## 1.0.11 - 2026-11-16
 
 - Help > About now shows each link (GitHub, Forgejo, projects site, Telegram, full credits) as its own control: Tab reaches it and Enter or Space opens it.
